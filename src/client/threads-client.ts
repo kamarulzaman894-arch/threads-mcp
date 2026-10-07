@@ -6,15 +6,25 @@ import {
   ThreadsInsights,
   ThreadsReplies,
   ThreadsConversation,
+  CreateThreadResponse,
+  CreateThreadParams,
   GetMediaParams,
   GetInsightsParams,
   GetRepliesParams,
+  SearchThreadsParams,
+  SearchLocationsParams,
+  ProfileLookupParams,
   ThreadsUserSchema,
   ThreadsMediaSchema,
   ThreadsInsightsSchema,
   ThreadsRepliesSchema,
   ThreadsConversationSchema,
+  CreateThreadResponseSchema,
 } from '../types/threads.js';
+import {
+  assertKZWriteApproval,
+  type KZWriteApproval,
+} from '../authority/write-approval.js';
 
 export class ThreadsAPIError extends Error {
   constructor(
@@ -48,9 +58,7 @@ export class ThreadsClient {
       },
     });
 
-    // Add request interceptor for authentication
     this.client.interceptors.request.use(async (config) => {
-      // Use token manager if available, otherwise use static token
       const accessToken = this.config.tokenManager
         ? await this.config.tokenManager.getToken()
         : this.config.accessToken;
@@ -62,7 +70,6 @@ export class ThreadsClient {
       return config;
     });
 
-    // Add response interceptor for error handling
     this.client.interceptors.response.use(
       (response) => response,
       (error: AxiosError) => {
@@ -81,9 +88,18 @@ export class ThreadsClient {
     );
   }
 
-  /**
-   * Get the authenticated user's profile
-   */
+  private async requireWriteApproval(
+    action: string,
+    approval: KZWriteApproval,
+    targetId?: string
+  ): Promise<void> {
+    await assertKZWriteApproval(this.config.writeApprovalValidator, {
+      action,
+      approval,
+      targetId,
+    });
+  }
+
   async getProfile(fields?: string[]): Promise<ThreadsUser> {
     const defaultFields = [
       'id',
@@ -95,17 +111,12 @@ export class ThreadsClient {
     const requestFields = fields || defaultFields;
 
     const response = await this.client.get(`/${this.config.userId}`, {
-      params: {
-        fields: requestFields.join(','),
-      },
+      params: { fields: requestFields.join(',') },
     });
 
     return ThreadsUserSchema.parse(response.data);
   }
 
-  /**
-   * Get user's threads (posts)
-   */
   async getThreads(params?: GetMediaParams): Promise<ThreadsMedia[]> {
     const defaultFields = [
       'id',
@@ -121,7 +132,6 @@ export class ThreadsClient {
       'children',
       'is_quote_post',
     ];
-
     const requestFields = params?.fields || defaultFields;
 
     const response = await this.client.get(`/${this.config.userId}/threads`, {
@@ -131,16 +141,10 @@ export class ThreadsClient {
       },
     });
 
-    if (!response.data.data) {
-      return [];
-    }
-
+    if (!response.data.data) return [];
     return response.data.data.map((item: unknown) => ThreadsMediaSchema.parse(item));
   }
 
-  /**
-   * Get a specific thread by ID
-   */
   async getThread(threadId: string, fields?: string[]): Promise<ThreadsMedia> {
     const defaultFields = [
       'id',
@@ -156,22 +160,170 @@ export class ThreadsClient {
       'children',
       'is_quote_post',
     ];
-
     const requestFields = fields || defaultFields;
 
     const response = await this.client.get(`/${threadId}`, {
-      params: {
-        fields: requestFields.join(','),
-      },
+      params: { fields: requestFields.join(',') },
     });
 
     return ThreadsMediaSchema.parse(response.data);
   }
 
-  /**
-   * Get insights for a specific thread
-   */
-  async getThreadInsights(threadId: string, params: GetInsightsParams): Promise<ThreadsInsights[]> {
+  async searchThreads(query: string, params?: SearchThreadsParams): Promise<unknown> {
+    const response = await this.client.get('/keyword_search', {
+      params: {
+        q: query,
+        search_type: params?.searchType || 'TOP',
+        ...(params?.fields && { fields: params.fields.join(',') }),
+        ...(params?.limit && { limit: params.limit }),
+        ...(params?.since && { since: params.since }),
+        ...(params?.until && { until: params.until }),
+      },
+    });
+    return response.data;
+  }
+
+  async getMentions(params?: GetMediaParams): Promise<unknown> {
+    const response = await this.client.get(`/${this.config.userId}/mentions`, {
+      params: {
+        ...(params?.fields && { fields: params.fields.join(',') }),
+        ...(params?.limit && { limit: params.limit }),
+      },
+    });
+    return response.data;
+  }
+
+  async profileLookup(username: string, params?: ProfileLookupParams): Promise<unknown> {
+    const response = await this.client.get('/profile_lookup', {
+      params: {
+        username,
+        ...(params?.fields && { fields: params.fields.join(',') }),
+      },
+    });
+    return response.data;
+  }
+
+  async searchLocations(query: string, params?: SearchLocationsParams): Promise<unknown> {
+    const response = await this.client.get('/location_search', {
+      params: {
+        q: query,
+        ...(params?.fields && { fields: params.fields.join(',') }),
+        ...(params?.latitude !== undefined && { latitude: params.latitude }),
+        ...(params?.longitude !== undefined && { longitude: params.longitude }),
+      },
+    });
+    return response.data;
+  }
+
+  async getLocation(locationId: string, fields?: string[]): Promise<unknown> {
+    const response = await this.client.get(`/${locationId}`, {
+      params: {
+        ...(fields && { fields: fields.join(',') }),
+      },
+    });
+    return response.data;
+  }
+
+  async createThread(
+    params: CreateThreadParams,
+    approval: KZWriteApproval
+  ): Promise<CreateThreadResponse> {
+    await this.requireWriteApproval('threads_create_thread', approval);
+
+    const containerParams: Record<string, string> = {
+      media_type: 'TEXT',
+    };
+
+    if (params.text) containerParams.text = params.text;
+    if (params.imageUrl) {
+      containerParams.media_type = 'IMAGE';
+      containerParams.image_url = params.imageUrl;
+    }
+    if (params.videoUrl) {
+      containerParams.media_type = 'VIDEO';
+      containerParams.video_url = params.videoUrl;
+    }
+    if (params.replyToId) containerParams.reply_to_id = params.replyToId;
+    if (params.replyControl) containerParams.reply_control = params.replyControl;
+
+    const containerResponse = await this.client.post(
+      `/${this.config.userId}/threads`,
+      null,
+      { params: containerParams }
+    );
+
+    const publishResponse = await this.client.post(
+      `/${this.config.userId}/threads_publish`,
+      null,
+      { params: { creation_id: containerResponse.data.id } }
+    );
+
+    return CreateThreadResponseSchema.parse(publishResponse.data);
+  }
+
+  async replyToThread(
+    threadId: string,
+    text: string,
+    approval: KZWriteApproval,
+    replyControl?: CreateThreadParams['replyControl']
+  ): Promise<CreateThreadResponse> {
+    await this.requireWriteApproval('threads_reply_to_thread', approval, threadId);
+    return this.createThread(
+      { text, replyToId: threadId, replyControl },
+      approval
+    );
+  }
+
+  async repostThread(
+    threadId: string,
+    approval: KZWriteApproval
+  ): Promise<CreateThreadResponse> {
+    await this.requireWriteApproval('threads_repost_thread', approval, threadId);
+
+    const containerResponse = await this.client.post(`/${threadId}/repost`, null);
+    const publishResponse = await this.client.post(
+      `/${this.config.userId}/threads_publish`,
+      null,
+      { params: { creation_id: containerResponse.data.id } }
+    );
+
+    return CreateThreadResponseSchema.parse(publishResponse.data);
+  }
+
+  async deleteThread(threadId: string, approval: KZWriteApproval): Promise<unknown> {
+    await this.requireWriteApproval('threads_delete_thread', approval, threadId);
+    const response = await this.client.delete(`/${threadId}`);
+    return response.data;
+  }
+
+  async manageReply(
+    replyId: string,
+    hide: boolean,
+    approval: KZWriteApproval
+  ): Promise<unknown> {
+    await this.requireWriteApproval('threads_manage_reply', approval, replyId);
+    const response = await this.client.post(`/${replyId}/manage_reply`, null, {
+      params: { hide },
+    });
+    return response.data;
+  }
+
+  async managePendingReply(
+    replyId: string,
+    approve: boolean,
+    approval: KZWriteApproval
+  ): Promise<unknown> {
+    await this.requireWriteApproval('threads_manage_pending_reply', approval, replyId);
+    const response = await this.client.post(`/${replyId}/manage_pending_reply`, null, {
+      params: { approve },
+    });
+    return response.data;
+  }
+
+  async getThreadInsights(
+    threadId: string,
+    params: GetInsightsParams
+  ): Promise<ThreadsInsights[]> {
     const response = await this.client.get(`/${threadId}/insights`, {
       params: {
         metric: params.metric.join(','),
@@ -180,16 +332,10 @@ export class ThreadsClient {
       },
     });
 
-    if (!response.data.data) {
-      return [];
-    }
-
+    if (!response.data.data) return [];
     return response.data.data.map((item: unknown) => ThreadsInsightsSchema.parse(item));
   }
 
-  /**
-   * Get user insights
-   */
   async getUserInsights(params: GetInsightsParams): Promise<ThreadsInsights[]> {
     const response = await this.client.get(`/${this.config.userId}/threads_insights`, {
       params: {
@@ -199,16 +345,10 @@ export class ThreadsClient {
       },
     });
 
-    if (!response.data.data) {
-      return [];
-    }
-
+    if (!response.data.data) return [];
     return response.data.data.map((item: unknown) => ThreadsInsightsSchema.parse(item));
   }
 
-  /**
-   * Get replies to a thread
-   */
   async getReplies(threadId: string, params?: GetRepliesParams): Promise<ThreadsReplies> {
     const defaultFields = ['id', 'text', 'username', 'permalink', 'timestamp'];
     const requestFields = params?.fields || defaultFields;
@@ -223,10 +363,10 @@ export class ThreadsClient {
     return ThreadsRepliesSchema.parse(response.data);
   }
 
-  /**
-   * Get conversation (thread and its replies)
-   */
-  async getConversation(threadId: string, params?: GetRepliesParams): Promise<ThreadsConversation> {
+  async getConversation(
+    threadId: string,
+    params?: GetRepliesParams
+  ): Promise<ThreadsConversation> {
     const defaultFields = ['id', 'text', 'username', 'permalink', 'timestamp'];
     const requestFields = params?.fields || defaultFields;
 
@@ -240,9 +380,6 @@ export class ThreadsClient {
     return ThreadsConversationSchema.parse(response.data);
   }
 
-  /**
-   * Validate the access token
-   */
   async validateToken(): Promise<boolean> {
     try {
       await this.getProfile(['id']);
