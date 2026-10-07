@@ -24,9 +24,7 @@ describe('ThreadsOAuth', () => {
       expect(url).toContain('https://threads.net/oauth/authorize');
       expect(url).toContain('client_id=test-app-id');
       expect(url).toContain('redirect_uri=https%3A%2F%2Fexample.com%2Fcallback');
-      expect(url).toContain('scope=threads_basic%2Cthreads_read_replies%2Cthreads_manage_insights');
-      expect(url).not.toContain('threads_content_publish');
-      expect(url).not.toContain('threads_manage_replies');
+      expect(url).toContain('scope=threads_basic%2Cthreads_content_publish%2Cthreads_manage_insights%2Cthreads_manage_replies%2Cthreads_read_replies%2Cthreads_keyword_search%2Cthreads_manage_mentions%2Cthreads_delete%2Cthreads_location_tagging%2Cthreads_profile_discovery');
       expect(url).toContain('response_type=code');
     });
 

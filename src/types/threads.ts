@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { KZWriteApprovalValidator } from '../authority/write-approval.js';
 
 // Threads API Response Types
 export const ThreadsUserSchema = z.object({
@@ -109,6 +110,10 @@ export interface ThreadsConfig {
     getToken: () => Promise<string>;
     getUserId: () => string;
   };
+  /**
+   * Required by all mutating methods. If omitted, write actions are denied.
+   */
+  writeApprovalValidator?: KZWriteApprovalValidator;
 }
 
 // Export for external use
@@ -120,7 +125,12 @@ export interface CreateThreadParams {
   imageUrl?: string;
   videoUrl?: string;
   replyToId?: string;
-  replyControl?: 'everyone' | 'accounts_you_follow' | 'mentioned_only';
+  replyControl?:
+    | 'everyone'
+    | 'accounts_you_follow'
+    | 'mentioned_only'
+    | 'parent_post_author_only'
+    | 'followers_only';
 }
 
 export interface GetMediaParams {
@@ -137,4 +147,23 @@ export interface GetInsightsParams {
 export interface GetRepliesParams {
   fields?: string[];
   reverse?: boolean;
+}
+
+
+export interface SearchThreadsParams {
+  searchType?: 'TOP' | 'RECENT';
+  fields?: string[];
+  limit?: number;
+  since?: number;
+  until?: number;
+}
+
+export interface SearchLocationsParams {
+  fields?: string[];
+  latitude?: number;
+  longitude?: number;
+}
+
+export interface ProfileLookupParams {
+  fields?: string[];
 }

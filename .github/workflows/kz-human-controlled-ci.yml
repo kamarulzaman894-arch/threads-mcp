@@ -1,8 +1,8 @@
-name: KZ Read-Only CI
+name: KZ Human-Controlled CI
 
 on:
   push:
-    branches: [ "kz-readonly-v1" ]
+    branches: [ "main", "kz-human-controlled-v2" ]
   pull_request:
 
 jobs:
