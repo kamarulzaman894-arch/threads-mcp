@@ -1,6 +1,6 @@
 import * as http from 'http';
 import { URL } from 'url';
-import { randomUUID } from 'crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { ThreadsOAuth } from './auth/oauth.js';
 
 const port = Number(process.env.PORT || 10000);
@@ -31,8 +31,60 @@ type AuthState = {
 };
 
 const authState: AuthState = { authenticated: false };
-const pendingStates = new Map<string, number>();
 const STATE_TTL_MS = 10 * 60 * 1000;
+
+function createSignedState(): string {
+  if (!appSecret) throw new Error('OAuth app secret is not configured');
+
+  const payload = Buffer.from(
+    JSON.stringify({
+      ts: Date.now(),
+      nonce: randomUUID(),
+    })
+  ).toString('base64url');
+
+  const signature = createHmac('sha256', appSecret)
+    .update(payload)
+    .digest('base64url');
+
+  return payload + '.' + signature;
+}
+
+function verifySignedState(state: string): boolean {
+  if (!appSecret) return false;
+
+  const parts = state.split('.');
+  if (parts.length !== 2) return false;
+
+  const [payload, signature] = parts;
+  const expected = createHmac('sha256', appSecret)
+    .update(payload)
+    .digest('base64url');
+
+  const actualBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+
+  if (
+    actualBuffer.length !== expectedBuffer.length ||
+    !timingSafeEqual(actualBuffer, expectedBuffer)
+  ) {
+    return false;
+  }
+
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(payload, 'base64url').toString('utf8')
+    ) as { ts?: number };
+
+    return (
+      typeof parsed.ts === 'number' &&
+      Date.now() - parsed.ts >= 0 &&
+      Date.now() - parsed.ts <= STATE_TTL_MS
+    );
+  } catch {
+    return false;
+  }
+}
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, {
@@ -52,13 +104,6 @@ function sendHtml(res: http.ServerResponse, status: number, body: string): void 
 
 function oauthConfigured(): boolean {
   return Boolean(appId && appSecret && redirectUri);
-}
-
-function cleanupStates(): void {
-  const now = Date.now();
-  for (const [state, createdAt] of pendingStates.entries()) {
-    if (now - createdAt > STATE_TTL_MS) pendingStates.delete(state);
-  }
 }
 
 function getOAuth(): ThreadsOAuth {
@@ -114,10 +159,7 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    cleanupStates();
-    const state = randomUUID();
-    pendingStates.set(state, Date.now());
-
+    const state = createSignedState();
     const authUrl = getOAuth().getAuthorizationUrl(scopes, state);
     res.writeHead(302, {
       Location: authUrl,
@@ -143,11 +185,9 @@ const server = http.createServer(async (req, res) => {
       );
     }
 
-    cleanupStates();
-    if (!state || !pendingStates.has(state)) {
+    if (!state || !verifySignedState(state)) {
       return sendHtml(res, 400, '<h1>Invalid or expired OAuth state.</h1>');
     }
-    pendingStates.delete(state);
 
     if (!code) {
       return sendHtml(res, 400, '<h1>No authorization code received.</h1>');
