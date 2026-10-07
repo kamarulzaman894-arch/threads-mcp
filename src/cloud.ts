@@ -5,6 +5,8 @@ import { ThreadsOAuth } from './auth/oauth.js';
 import { ThreadsClient } from './client/threads-client.js';
 import * as net from 'net';
 import * as tls from 'tls';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { ThreadsMCPServer } from './server.js';
 
 const port = Number(process.env.PORT || 10000);
 const appId = process.env.THREADS_APP_ID;
@@ -14,6 +16,7 @@ const redirectUri =
   process.env.THREADS_REDIRECT_URI ||
   (publicBaseUrl ? publicBaseUrl + '/oauth/callback' : '');
 const redisUrl = process.env.REDIS_URL;
+const mcpBearerToken = process.env.MCP_REMOTE_BEARER_TOKEN;
 const TOKEN_KEY = 'kz:threads:oauth-token';
 
 const scopes = [
@@ -59,6 +62,105 @@ const inFlightStates = new Map<
   Promise<{ accessToken: string; userId: string; expiresIn: number }>
 >();
 const STATE_TTL_MS = 10 * 60 * 1000;
+
+type McpSession = {
+  transport: StreamableHTTPServerTransport;
+  server: ThreadsMCPServer;
+};
+
+const mcpSessions = new Map<string, McpSession>();
+
+function mcpRequestAuthorized(req: http.IncomingMessage): boolean {
+  if (!mcpBearerToken) return false;
+
+  const header = req.headers.authorization;
+  if (!header || Array.isArray(header) || !header.startsWith('Bearer ')) {
+    return false;
+  }
+
+  const supplied = Buffer.from(header.slice('Bearer '.length));
+  const expected = Buffer.from(mcpBearerToken);
+
+  return (
+    supplied.length === expected.length &&
+    timingSafeEqual(supplied, expected)
+  );
+}
+
+async function handleMcpRequest(
+  req: http.IncomingMessage,
+  res: http.ServerResponse
+): Promise<void> {
+  if (!mcpBearerToken) {
+    return sendJson(res, 503, {
+      error: 'MCP_REMOTE_AUTH_NOT_CONFIGURED',
+    });
+  }
+
+  if (!mcpRequestAuthorized(req)) {
+    res.setHeader('WWW-Authenticate', 'Bearer');
+    return sendJson(res, 401, {
+      error: 'UNAUTHORIZED',
+    });
+  }
+
+  if (!activeAccessToken || !authState.userId) {
+    return sendJson(res, 503, {
+      error: 'THREADS_NOT_AUTHENTICATED',
+    });
+  }
+
+  const rawSessionId = req.headers['mcp-session-id'];
+  const sessionId = Array.isArray(rawSessionId)
+    ? rawSessionId[0]
+    : rawSessionId;
+
+  if (sessionId) {
+    const existing = mcpSessions.get(sessionId);
+    if (!existing) {
+      return sendJson(res, 404, {
+        error: 'MCP_SESSION_NOT_FOUND',
+      });
+    }
+
+    await existing.transport.handleRequest(req, res);
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    return sendJson(res, 400, {
+      error: 'MCP_SESSION_REQUIRED',
+    });
+  }
+
+  const mcpServer = new ThreadsMCPServer();
+  mcpServer.setClient(
+    new ThreadsClient({
+      accessToken: activeAccessToken,
+      userId: authState.userId,
+    })
+  );
+
+  let transport: StreamableHTTPServerTransport;
+  transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: () => randomUUID(),
+    enableJsonResponse: true,
+    onsessioninitialized: (id) => {
+      mcpSessions.set(id, {
+        transport,
+        server: mcpServer,
+      });
+      console.error('Remote MCP session initialized.');
+    },
+    onsessionclosed: (id) => {
+      mcpSessions.delete(id);
+      console.error('Remote MCP session closed.');
+    },
+  });
+
+  await mcpServer.connect(transport);
+  await transport.handleRequest(req, res);
+}
 
 function encodeRedisCommand(parts: string[]): string {
   let out = '*' + parts.length + '\r\n';
@@ -438,6 +540,12 @@ const server = http.createServer(async (req, res) => {
       status: 'online',
       primaryRoute: 'ChatGPT -> THRIVE OS -> KZ Threads MCP -> Official Meta Threads API',
       tia: 'optional',
+      remoteMcp: {
+        path: '/mcp',
+        transport: 'streamable-http',
+        authentication: 'bearer',
+        configured: Boolean(mcpBearerToken),
+      },
     });
   }
 
@@ -447,7 +555,24 @@ const server = http.createServer(async (req, res) => {
       oauthConfigured: oauthConfigured(),
       redirectUri: redirectUri || null,
       authenticated: authState.authenticated,
+      remoteMcpConfigured: Boolean(mcpBearerToken),
+      remoteMcpSessions: mcpSessions.size,
     });
+  }
+
+  if (url.pathname === '/mcp') {
+    try {
+      await handleMcpRequest(req, res);
+    } catch (error) {
+      console.error('Remote MCP request failed:', checkDetail(error));
+      if (!res.headersSent) {
+        return sendJson(res, 500, {
+          error: 'MCP_REQUEST_FAILED',
+        });
+      }
+      res.end();
+    }
+    return;
   }
 
   if (req.method === 'GET' && url.pathname === '/oauth/status') {
@@ -583,6 +708,10 @@ const server = http.createServer(async (req, res) => {
 server.listen(port, '0.0.0.0', async () => {
   console.error('KZ Threads MCP cloud service listening on port ' + port);
   console.error('OAuth callback:', redirectUri || 'PENDING');
+  console.error(
+    'Remote MCP transport:',
+    mcpBearerToken ? 'READY_BEARER_PROTECTED' : 'AUTH_NOT_CONFIGURED'
+  );
 
   try {
     const stored = await loadToken();
