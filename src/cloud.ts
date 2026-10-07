@@ -2,6 +2,7 @@ import * as http from 'http';
 import { URL } from 'url';
 import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { ThreadsOAuth } from './auth/oauth.js';
+import { McpOAuthServer } from './mcp-oauth.js';
 import { ThreadsClient } from './client/threads-client.js';
 import * as net from 'net';
 import * as tls from 'tls';
@@ -69,16 +70,30 @@ type McpSession = {
 };
 
 const mcpSessions = new Map<string, McpSession>();
+const oauthServer = publicBaseUrl ? new McpOAuthServer({
+  baseUrl: publicBaseUrl,
+  resourceUrl: publicBaseUrl + '/mcp',
+  scope: 'threads.read',
+  getConnectedUserId: () => authState.userId || null,
+  store: {
+    get: async (key) => redisCommand(['GET', key]),
+    set: async (key, value, ttl) =>
+      (await redisCommand(['SET', key, value, 'EX', String(ttl)])) === 'OK',
+    del: async (key) => { await redisCommand(['DEL', key]); },
+  },
+}) : null;
 
-function mcpRequestAuthorized(req: http.IncomingMessage): boolean {
-  if (!mcpBearerToken) return false;
 
+async function mcpRequestAuthorized(req: http.IncomingMessage): Promise<boolean> {
   const header = req.headers.authorization;
   if (!header || Array.isArray(header) || !header.startsWith('Bearer ')) {
     return false;
   }
 
-  const supplied = Buffer.from(header.slice('Bearer '.length));
+  const token = header.slice('Bearer '.length);
+  if (oauthServer && await oauthServer.verifyAccessToken(token)) return true;
+  if (!mcpBearerToken) return false;
+  const supplied = Buffer.from(token);
   const expected = Buffer.from(mcpBearerToken);
 
   return (
@@ -91,14 +106,9 @@ async function handleMcpRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse
 ): Promise<void> {
-  if (!mcpBearerToken) {
-    return sendJson(res, 503, {
-      error: 'MCP_REMOTE_AUTH_NOT_CONFIGURED',
-    });
-  }
-
-  if (!mcpRequestAuthorized(req)) {
-    res.setHeader('WWW-Authenticate', 'Bearer');
+  if (!await mcpRequestAuthorized(req)) {
+    res.setHeader('WWW-Authenticate',
+      'Bearer resource_metadata="' + publicBaseUrl + '/.well-known/oauth-protected-resource", scope="threads.read"');
     return sendJson(res, 401, {
       error: 'UNAUTHORIZED',
     });
@@ -690,8 +700,8 @@ const server = http.createServer(async (req, res) => {
       remoteMcp: {
         path: '/mcp',
         transport: 'streamable-http',
-        authentication: 'bearer',
-        configured: Boolean(mcpBearerToken),
+        authentication: 'oauth2-or-internal-bearer',
+        configured: Boolean(oauthServer && redisUrl),
       },
     });
   }
@@ -702,9 +712,43 @@ const server = http.createServer(async (req, res) => {
       oauthConfigured: oauthConfigured(),
       redirectUri: redirectUri || null,
       authenticated: authState.authenticated,
-      remoteMcpConfigured: Boolean(mcpBearerToken),
+      remoteMcpConfigured: Boolean(oauthServer && redisUrl),
       remoteMcpSessions: mcpSessions.size,
     });
+  }
+
+  if (oauthServer && req.method === 'GET' &&
+    (url.pathname === '/.well-known/oauth-protected-resource' ||
+     url.pathname === '/.well-known/oauth-protected-resource/mcp')) {
+    return sendJson(res, 200, oauthServer.protectedResourceMetadata());
+  }
+  if (oauthServer && req.method === 'GET' &&
+      url.pathname === '/.well-known/oauth-authorization-server') {
+    return sendJson(res, 200, oauthServer.authorizationServerMetadata());
+  }
+  if (oauthServer && req.method === 'POST' && url.pathname === '/oauth/register') {
+    try { await oauthServer.register(req, res); }
+    catch (error) { console.error('OAuth registration failed:', checkDetail(error));
+      if (!res.headersSent) sendJson(res, 400, { error: 'invalid_client_metadata' }); }
+    return;
+  }
+  if (oauthServer && req.method === 'GET' && url.pathname === '/oauth/authorize') {
+    try { await oauthServer.authorize(url, res); }
+    catch (error) { console.error('OAuth authorize failed:', checkDetail(error));
+      if (!res.headersSent) sendJson(res, 500, { error: 'server_error' }); }
+    return;
+  }
+  if (oauthServer && req.method === 'POST' && url.pathname === '/oauth/approve') {
+    try { await oauthServer.approve(req, res); }
+    catch (error) { console.error('OAuth approve failed:', checkDetail(error));
+      if (!res.headersSent) sendJson(res, 500, { error: 'server_error' }); }
+    return;
+  }
+  if (oauthServer && req.method === 'POST' && url.pathname === '/oauth/token') {
+    try { await oauthServer.token(req, res); }
+    catch (error) { console.error('OAuth token failed:', checkDetail(error));
+      if (!res.headersSent) sendJson(res, 500, { error: 'server_error' }); }
+    return;
   }
 
   if (url.pathname === '/mcp') {
