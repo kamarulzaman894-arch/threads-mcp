@@ -13,8 +13,6 @@ import type {
   ThreadsInsights,
   ThreadsReplies,
   ThreadsConversation,
-  CreateThreadResponse,
-  CreateThreadParams,
   GetMediaParams,
   GetInsightsParams,
   GetRepliesParams,
@@ -124,28 +122,6 @@ export class EnhancedThreadsClient extends ThreadsClient {
   }
 
   /**
-   * Create thread with rate limiting and webhook trigger
-   */
-  override async createThread(params: CreateThreadParams): Promise<CreateThreadResponse> {
-    await this.checkRateLimit(2); // Creating costs more tokens
-
-    const result = await super.createThread(params);
-
-    // Trigger webhook
-    if (this.webhookManager) {
-      await this.webhookManager.trigger('thread.created', {
-        threadId: result.id,
-        params,
-      });
-    }
-
-    // Invalidate relevant caches
-    this.invalidateCache('threads:');
-
-    return result;
-  }
-
-  /**
    * Get thread insights with caching
    */
   override async getThreadInsights(
@@ -224,34 +200,6 @@ export class EnhancedThreadsClient extends ThreadsClient {
     this.cache?.set(cacheKey, conversation, 30000); // Cache for 30 seconds
 
     return conversation;
-  }
-
-  /**
-   * Reply to thread with rate limiting and webhook trigger
-   */
-  override async replyToThread(
-    threadId: string,
-    text: string,
-    replyControl?: CreateThreadParams['replyControl']
-  ): Promise<CreateThreadResponse> {
-    await this.checkRateLimit(2);
-
-    const result = await super.replyToThread(threadId, text, replyControl);
-
-    // Trigger webhook
-    if (this.webhookManager) {
-      await this.webhookManager.trigger('reply.created', {
-        replyId: result.id,
-        threadId,
-        text,
-      });
-    }
-
-    // Invalidate relevant caches
-    this.invalidateCache(`replies:${threadId}`);
-    this.invalidateCache(`conversation:${threadId}`);
-
-    return result;
   }
 
   /**
