@@ -50,14 +50,16 @@ OAuth capability does not grant execution authority.
 5. threads_manage_reply
 6. threads_manage_pending_reply
 
-## Consumer architecture
+## Primary runtime routing
 
-Official Meta Threads API
+ChatGPT
+→ THRIVE OS (primary Threads operating layer)
 → KZ Threads MCP Human-Controlled V2
-  → TIA (specialist inside KZ MARS OS)
-  → THRIVE OS (standalone)
+→ Official Meta Threads API
 
-TIA and THRIVE are independent consumers. There is no TIA -> THRIVE dependency.
+TIA is optional, not part of the required runtime path.
+
+When specialist Threads intelligence from KZ MARS OS is needed, ChatGPT/THRIVE may escalate to TIA. THRIVE OS does not depend on TIA, and TIA is not the parent, backend, or mandatory gateway for THRIVE.
 
 ## Promotion gates
 
