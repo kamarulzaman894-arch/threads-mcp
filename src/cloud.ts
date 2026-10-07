@@ -2,6 +2,9 @@ import * as http from 'http';
 import { URL } from 'url';
 import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { ThreadsOAuth } from './auth/oauth.js';
+import { ThreadsClient } from './client/threads-client.js';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 
 const port = Number(process.env.PORT || 10000);
 const appId = process.env.THREADS_APP_ID;
@@ -10,6 +13,9 @@ const publicBaseUrl = (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
 const redirectUri =
   process.env.THREADS_REDIRECT_URI ||
   (publicBaseUrl ? publicBaseUrl + '/oauth/callback' : '');
+const redisUrl = process.env.REDIS_URL;
+const execFileAsync = promisify(execFile);
+const TOKEN_KEY = 'kz:threads:oauth-token';
 
 const scopes = [
   'threads_basic',
@@ -24,10 +30,26 @@ const scopes = [
   'threads_profile_discovery',
 ];
 
+type SmokeCheck = {
+  ok: boolean;
+  detail?: string;
+};
+
+type SmokeResult = {
+  profile?: SmokeCheck;
+  threads?: SmokeCheck;
+  thread?: SmokeCheck;
+  replies?: SmokeCheck;
+  search?: SmokeCheck;
+  insights?: SmokeCheck;
+};
+
 type AuthState = {
   authenticated: boolean;
   userId?: string;
   expiresAt?: number;
+  persistent?: boolean;
+  smoke?: SmokeResult;
 };
 
 const authState: AuthState = { authenticated: false };
@@ -38,6 +60,154 @@ const inFlightStates = new Map<
   Promise<{ accessToken: string; userId: string; expiresIn: number }>
 >();
 const STATE_TTL_MS = 10 * 60 * 1000;
+
+async function redisCli(args: string[]): Promise<string | null> {
+  if (!redisUrl) return null;
+
+  const { stdout } = await execFileAsync(
+    'redis-cli',
+    ['-u', redisUrl, '--raw', ...args],
+    { timeout: 5000 }
+  );
+
+  return stdout.trim();
+}
+
+async function saveToken(token: {
+  accessToken: string;
+  userId: string;
+  expiresAt: number;
+}): Promise<boolean> {
+  if (!redisUrl) return false;
+
+  const payload = JSON.stringify(token);
+  const result = await redisCli(['SET', TOKEN_KEY, payload]);
+  return result === 'OK';
+}
+
+async function loadToken(): Promise<{
+  accessToken: string;
+  userId: string;
+  expiresAt: number;
+} | null> {
+  if (!redisUrl) return null;
+
+  const value = await redisCli(['GET', TOKEN_KEY]);
+  if (!value) return null;
+
+  try {
+    const parsed = JSON.parse(value) as {
+      accessToken?: string;
+      userId?: string;
+      expiresAt?: number;
+    };
+
+    if (
+      !parsed.accessToken ||
+      !parsed.userId ||
+      typeof parsed.expiresAt !== 'number' ||
+      parsed.expiresAt <= Date.now()
+    ) {
+      return null;
+    }
+
+    return {
+      accessToken: parsed.accessToken,
+      userId: parsed.userId,
+      expiresAt: parsed.expiresAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function checkDetail(error: unknown): string {
+  return error instanceof Error ? error.message.slice(0, 180) : 'Unknown error';
+}
+
+async function runReadSmoke(
+  accessToken: string,
+  userId: string
+): Promise<SmokeResult> {
+  const smoke: SmokeResult = {};
+  const client = new ThreadsClient({
+    accessToken,
+    userId,
+  });
+
+  let latestThreadId: string | undefined;
+
+  try {
+    const profile = await client.getProfile(['id', 'username', 'name']);
+    smoke.profile = {
+      ok: true,
+      detail: profile.username ? 'profile:' + profile.username : 'profile-read-pass',
+    };
+  } catch (error) {
+    smoke.profile = { ok: false, detail: checkDetail(error) };
+  }
+
+  try {
+    const threads = await client.getThreads({
+      limit: 5,
+      fields: ['id', 'username', 'text', 'timestamp', 'permalink'],
+    });
+    latestThreadId = threads[0]?.id;
+    smoke.threads = {
+      ok: true,
+      detail: 'posts:' + threads.length,
+    };
+  } catch (error) {
+    smoke.threads = { ok: false, detail: checkDetail(error) };
+  }
+
+  if (latestThreadId) {
+    try {
+      await client.getThread(latestThreadId, ['id', 'username', 'text', 'timestamp']);
+      smoke.thread = { ok: true, detail: 'latest-post-read-pass' };
+    } catch (error) {
+      smoke.thread = { ok: false, detail: checkDetail(error) };
+    }
+
+    try {
+      const replies = await client.getReplies(latestThreadId, {
+        fields: ['id', 'text', 'username', 'timestamp'],
+        reverse: false,
+      });
+      smoke.replies = {
+        ok: true,
+        detail: 'replies:' + (replies.data?.length ?? 0),
+      };
+    } catch (error) {
+      smoke.replies = { ok: false, detail: checkDetail(error) };
+    }
+
+    try {
+      const insights = await client.getThreadInsights(latestThreadId, {
+        metric: ['views', 'likes', 'replies', 'reposts', 'quotes'],
+      });
+      smoke.insights = {
+        ok: true,
+        detail: 'metrics:' + insights.length,
+      };
+    } catch (error) {
+      smoke.insights = { ok: false, detail: checkDetail(error) };
+    }
+  }
+
+  try {
+    await client.searchThreads('marketing', {
+      searchType: 'TOP',
+      limit: 3,
+      fields: ['id', 'username', 'text', 'timestamp', 'permalink'],
+    });
+    smoke.search = { ok: true, detail: 'keyword-search-pass' };
+  } catch (error) {
+    smoke.search = { ok: false, detail: checkDetail(error) };
+  }
+
+  return smoke;
+}
 
 function createSignedState(): string {
   if (!appSecret) throw new Error('OAuth app secret is not configured');
@@ -152,6 +322,8 @@ const server = http.createServer(async (req, res) => {
       authenticated: authState.authenticated,
       userId: authState.userId || null,
       expiresAt: authState.expiresAt || null,
+      persistent: Boolean(authState.persistent),
+      smoke: authState.smoke || null,
       redirectUri: redirectUri || null,
     });
   }
@@ -220,11 +392,26 @@ const server = http.createServer(async (req, res) => {
       authState.authenticated = true;
       authState.userId = result.userId;
       authState.expiresAt = Date.now() + result.expiresIn * 1000;
+
+      try {
+        authState.persistent = await saveToken({
+          accessToken: result.accessToken,
+          userId: result.userId,
+          expiresAt: authState.expiresAt,
+        });
+      } catch (error) {
+        authState.persistent = false;
+        console.error('Persistent token save failed:', checkDetail(error));
+      }
+
+      authState.smoke = await runReadSmoke(result.accessToken, result.userId);
       completedStates.add(state);
       inFlightStates.delete(state);
 
       console.error('Threads OAuth completed for user ID:', result.userId);
-      console.error('Access token retained in service memory and is not logged.');
+      console.error('Access token is not logged.');
+      console.error('Persistent token store:', authState.persistent ? 'PASS' : 'NOT_CONFIGURED');
+      console.error('Read smoke summary:', JSON.stringify(authState.smoke));
 
       return sendHtml(
         res,
@@ -259,7 +446,26 @@ const server = http.createServer(async (req, res) => {
   return sendJson(res, 404, { error: 'NOT_FOUND' });
 });
 
-server.listen(port, '0.0.0.0', () => {
+server.listen(port, '0.0.0.0', async () => {
   console.error('KZ Threads MCP cloud service listening on port ' + port);
   console.error('OAuth callback:', redirectUri || 'PENDING');
+
+  try {
+    const stored = await loadToken();
+    if (stored) {
+      activeAccessToken = stored.accessToken;
+      authState.authenticated = true;
+      authState.userId = stored.userId;
+      authState.expiresAt = stored.expiresAt;
+      authState.persistent = true;
+      authState.smoke = await runReadSmoke(stored.accessToken, stored.userId);
+      console.error('Persistent Threads token restored successfully.');
+      console.error('Read smoke summary:', JSON.stringify(authState.smoke));
+    } else {
+      authState.persistent = false;
+    }
+  } catch (error) {
+    authState.persistent = false;
+    console.error('Persistent token restore failed:', checkDetail(error));
+  }
 });
