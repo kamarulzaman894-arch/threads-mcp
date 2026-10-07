@@ -53,7 +53,7 @@ export class ThreadsOAuth {
    * Direct users to this URL to grant permissions to your app
    */
   getAuthorizationUrl(
-    scope: string[] = ['threads_basic', 'threads_read_replies', 'threads_manage_insights'],
+    scope: string[] = ['threads_basic', 'threads_content_publish', 'threads_manage_insights', 'threads_manage_replies', 'threads_read_replies', 'threads_keyword_search', 'threads_manage_mentions', 'threads_delete', 'threads_location_tagging', 'threads_profile_discovery'],
     state?: string
   ): string {
     const params = new URLSearchParams({
