@@ -32,3 +32,5 @@ Removed OAuth scopes:
 - threads_manage_replies
 
 No publish, reply-write, delete, moderation-write, browser-cookie automation, or unofficial Threads API path is authorized in Phase 1.
+
+CI enforcement: GitHub Actions runs pnpm install, build, and test on kz-readonly-v1.
