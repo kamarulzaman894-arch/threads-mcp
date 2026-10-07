@@ -13,8 +13,6 @@ import type {
   ThreadsInsights,
   ThreadsReplies,
   ThreadsConversation,
-  CreateThreadResponse,
-  CreateThreadParams,
   GetMediaParams,
   GetInsightsParams,
   GetRepliesParams,
@@ -124,28 +122,6 @@ export class EnhancedThreadsClient extends ThreadsClient {
   }
 
   /**
-   * Create thread with rate limiting and webhook trigger
-   */
-  override async createThread(params: CreateThreadParams): Promise<CreateThreadResponse> {
-    await this.checkRateLimit(2); // Creating costs more tokens
-
-    const result = await super.createThread(params);
-
-    // Trigger webhook
-    if (this.webhookManager) {
-      await this.webhookManager.trigger('thread.created', {
-        threadId: result.id,
-        params,
-      });
-    }
-
-    // Invalidate relevant caches
-    this.invalidateCache('threads:');
-
-    return result;
-  }
-
-  /**
    * Get thread insights with caching
    */
   override async getThreadInsights(
@@ -227,54 +203,12 @@ export class EnhancedThreadsClient extends ThreadsClient {
   }
 
   /**
-   * Reply to thread with rate limiting and webhook trigger
-   */
-  override async replyToThread(
-    threadId: string,
-    text: string,
-    replyControl?: CreateThreadParams['replyControl']
-  ): Promise<CreateThreadResponse> {
-    await this.checkRateLimit(2);
-
-    const result = await super.replyToThread(threadId, text, replyControl);
-
-    // Trigger webhook
-    if (this.webhookManager) {
-      await this.webhookManager.trigger('reply.created', {
-        replyId: result.id,
-        threadId,
-        text,
-      });
-    }
-
-    // Invalidate relevant caches
-    this.invalidateCache(`replies:${threadId}`);
-    this.invalidateCache(`conversation:${threadId}`);
-
-    return result;
-  }
-
-  /**
    * Check rate limit before making request
    */
   private async checkRateLimit(tokens: number = 1): Promise<void> {
     if (this.rateLimiter) {
       await this.rateLimiter.consume(tokens);
     }
-  }
-
-  /**
-   * Invalidate cache entries by prefix
-   */
-  private invalidateCache(prefix: string): void {
-    if (!this.cache) return;
-
-    const keys = this.cache.keys();
-    keys.forEach((key) => {
-      if (key.startsWith(prefix)) {
-        this.cache!.delete(key);
-      }
-    });
   }
 
   /**

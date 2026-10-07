@@ -23,14 +23,6 @@ const GetThreadSchema = z.object({
   fields: z.array(z.string()).optional(),
 });
 
-const CreateThreadSchema = z.object({
-  text: z.string().optional(),
-  imageUrl: z.string().url().optional(),
-  videoUrl: z.string().url().optional(),
-  replyToId: z.string().optional(),
-  replyControl: z.enum(['everyone', 'accounts_you_follow', 'mentioned_only']).optional(),
-});
-
 const GetInsightsSchema = z.object({
   threadId: z.string().optional(),
   metrics: z.array(z.string()).min(1),
@@ -50,12 +42,6 @@ const GetConversationSchema = z.object({
   reverse: z.boolean().optional(),
 });
 
-const ReplyToThreadSchema = z.object({
-  threadId: z.string().min(1),
-  text: z.string().min(1),
-  replyControl: z.enum(['everyone', 'accounts_you_follow', 'mentioned_only']).optional(),
-});
-
 export class ThreadsMCPServer {
   private server: Server;
   private client: ThreadsClient | null = null;
@@ -63,8 +49,8 @@ export class ThreadsMCPServer {
   constructor() {
     this.server = new Server(
       {
-        name: 'threads-mcp',
-        version: '1.0.0',
+        name: 'kz-threads-mcp-readonly',
+        version: '1.0.0-kz-readonly',
       },
       {
         capabilities: {
@@ -131,36 +117,6 @@ export class ThreadsMCPServer {
               },
             },
             required: ['threadId'],
-          },
-        },
-        {
-          name: 'threads_create_thread',
-          description: 'Create a new thread (post) with text, image, or video. Can also be used to reply to another thread.',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              text: {
-                type: 'string',
-                description: 'The text content of the thread',
-              },
-              imageUrl: {
-                type: 'string',
-                description: 'URL of an image to include (must be publicly accessible)',
-              },
-              videoUrl: {
-                type: 'string',
-                description: 'URL of a video to include (must be publicly accessible)',
-              },
-              replyToId: {
-                type: 'string',
-                description: 'ID of the thread to reply to',
-              },
-              replyControl: {
-                type: 'string',
-                enum: ['everyone', 'accounts_you_follow', 'mentioned_only'],
-                description: 'Who can reply to this thread',
-              },
-            },
           },
         },
         {
@@ -236,29 +192,6 @@ export class ThreadsMCPServer {
             required: ['threadId'],
           },
         },
-        {
-          name: 'threads_reply_to_thread',
-          description: 'Reply to an existing thread',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              threadId: {
-                type: 'string',
-                description: 'The ID of the thread to reply to',
-              },
-              text: {
-                type: 'string',
-                description: 'The text content of the reply',
-              },
-              replyControl: {
-                type: 'string',
-                enum: ['everyone', 'accounts_you_follow', 'mentioned_only'],
-                description: 'Who can reply to this reply',
-              },
-            },
-            required: ['threadId', 'text'],
-          },
-        },
       ];
 
       return { tools };
@@ -313,18 +246,6 @@ export class ThreadsMCPServer {
             };
           }
 
-          case 'threads_create_thread': {
-            const params = CreateThreadSchema.parse(args);
-            const result = await this.client.createThread(params);
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(result, null, 2),
-                },
-              ],
-            };
-          }
 
           case 'threads_get_insights': {
             const params = GetInsightsSchema.parse(args);
@@ -381,22 +302,6 @@ export class ThreadsMCPServer {
             };
           }
 
-          case 'threads_reply_to_thread': {
-            const params = ReplyToThreadSchema.parse(args);
-            const result = await this.client.replyToThread(
-              params.threadId,
-              params.text,
-              params.replyControl
-            );
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(result, null, 2),
-                },
-              ],
-            };
-          }
 
           default:
             throw new Error(`Unknown tool: ${name}`);

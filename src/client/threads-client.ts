@@ -6,8 +6,6 @@ import {
   ThreadsInsights,
   ThreadsReplies,
   ThreadsConversation,
-  CreateThreadResponse,
-  CreateThreadParams,
   GetMediaParams,
   GetInsightsParams,
   GetRepliesParams,
@@ -16,7 +14,6 @@ import {
   ThreadsInsightsSchema,
   ThreadsRepliesSchema,
   ThreadsConversationSchema,
-  CreateThreadResponseSchema,
 } from '../types/threads.js';
 
 export class ThreadsAPIError extends Error {
@@ -172,53 +169,6 @@ export class ThreadsClient {
   }
 
   /**
-   * Create a new thread (post)
-   */
-  async createThread(params: CreateThreadParams): Promise<CreateThreadResponse> {
-    // Step 1: Create media container
-    const containerParams: Record<string, string> = {
-      media_type: 'TEXT',
-    };
-
-    if (params.text) {
-      containerParams.text = params.text;
-    }
-
-    if (params.imageUrl) {
-      containerParams.media_type = 'IMAGE';
-      containerParams.image_url = params.imageUrl;
-    }
-
-    if (params.videoUrl) {
-      containerParams.media_type = 'VIDEO';
-      containerParams.video_url = params.videoUrl;
-    }
-
-    if (params.replyToId) {
-      containerParams.reply_to_id = params.replyToId;
-    }
-
-    if (params.replyControl) {
-      containerParams.reply_control = params.replyControl;
-    }
-
-    const containerResponse = await this.client.post(`/${this.config.userId}/threads`, null, {
-      params: containerParams,
-    });
-
-    const containerId = containerResponse.data.id;
-
-    // Step 2: Publish the media container
-    const publishResponse = await this.client.post(`/${this.config.userId}/threads_publish`, null, {
-      params: {
-        creation_id: containerId,
-      },
-    });
-
-    return CreateThreadResponseSchema.parse(publishResponse.data);
-  }
-
-  /**
    * Get insights for a specific thread
    */
   async getThreadInsights(threadId: string, params: GetInsightsParams): Promise<ThreadsInsights[]> {
@@ -288,21 +238,6 @@ export class ThreadsClient {
     });
 
     return ThreadsConversationSchema.parse(response.data);
-  }
-
-  /**
-   * Reply to a thread
-   */
-  async replyToThread(
-    threadId: string,
-    text: string,
-    replyControl?: CreateThreadParams['replyControl']
-  ): Promise<CreateThreadResponse> {
-    return this.createThread({
-      text,
-      replyToId: threadId,
-      replyControl,
-    });
   }
 
   /**
