@@ -103,6 +103,22 @@ describe('ThreadsMCPServer Integration', () => {
       );
       expect(listToolsCalls.length).toBeGreaterThanOrEqual(0);
     });
+
+    it('should expose exactly 17 human-controlled tools', async () => {
+      const serverInstance = (server as any).server;
+      const handler = serverInstance.requestHandlers.get('tools/list');
+      expect(handler).toBeDefined();
+
+      const result = await handler({});
+      expect(result.tools).toHaveLength(17);
+
+      const names = result.tools.map((tool: any) => tool.name);
+      expect(names).toContain('threads_search');
+      expect(names).toContain('threads_profile_lookup');
+      expect(names).toContain('threads_create_thread');
+      expect(names).toContain('threads_delete_thread');
+      expect(names).toContain('threads_manage_pending_reply');
+    });
   });
 
   describe('Server lifecycle', () => {
