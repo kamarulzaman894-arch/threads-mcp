@@ -4,9 +4,28 @@ export interface KZWriteApproval {
   approvalRef: string;
 }
 
-export function assertKZWriteApproval(
-  approval: KZWriteApproval | undefined
-): asserts approval is KZWriteApproval {
+export interface KZWriteApprovalRequest {
+  action: string;
+  approval: KZWriteApproval;
+  targetId?: string;
+}
+
+export interface KZWriteApprovalValidator {
+  validate(request: KZWriteApprovalRequest): Promise<boolean>;
+}
+
+export const denyAllWriteApprovalValidator: KZWriteApprovalValidator = {
+  async validate() {
+    return false;
+  },
+};
+
+export async function assertKZWriteApproval(
+  validator: KZWriteApprovalValidator | undefined,
+  request: KZWriteApprovalRequest
+): Promise<void> {
+  const approval = request.approval;
+
   if (
     !approval ||
     approval.approved !== true ||
@@ -15,7 +34,14 @@ export function assertKZWriteApproval(
     approval.approvalRef.trim().length === 0
   ) {
     throw new Error(
-      'KZ explicit approval required for Threads write action. Provide approved=true, approvedBy=KZ, and a non-empty approvalRef.'
+      'KZ explicit approval required for Threads write action.'
+    );
+  }
+
+  const isValid = await (validator ?? denyAllWriteApprovalValidator).validate(request);
+  if (!isValid) {
+    throw new Error(
+      'Threads write blocked: approvalRef was not validated by the host approval authority.'
     );
   }
 }
