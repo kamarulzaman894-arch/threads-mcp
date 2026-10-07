@@ -141,8 +141,8 @@ describe('ThreadsMCPServer Integration', () => {
       const serverInstance = (server as any).server;
       expect(Server).toHaveBeenCalledWith(
         expect.objectContaining({
-          name: 'kz-threads-mcp-readonly',
-          version: '1.0.0-kz-readonly',
+          name: 'kz-threads-mcp-human-controlled',
+          version: '2.0.0',
         }),
         expect.objectContaining({
           capabilities: expect.objectContaining({
