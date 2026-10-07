@@ -224,12 +224,7 @@ export class ThreadsClient {
     return response.data;
   }
 
-  async createThread(
-    params: CreateThreadParams,
-    approval: KZWriteApproval
-  ): Promise<CreateThreadResponse> {
-    await this.requireWriteApproval('threads_create_thread', approval);
-
+  private async publishThread(params: CreateThreadParams): Promise<CreateThreadResponse> {
     const containerParams: Record<string, string> = {
       media_type: 'TEXT',
     };
@@ -261,6 +256,14 @@ export class ThreadsClient {
     return CreateThreadResponseSchema.parse(publishResponse.data);
   }
 
+  async createThread(
+    params: CreateThreadParams,
+    approval: KZWriteApproval
+  ): Promise<CreateThreadResponse> {
+    await this.requireWriteApproval('threads_create_thread', approval);
+    return this.publishThread(params);
+  }
+
   async replyToThread(
     threadId: string,
     text: string,
@@ -268,10 +271,7 @@ export class ThreadsClient {
     replyControl?: CreateThreadParams['replyControl']
   ): Promise<CreateThreadResponse> {
     await this.requireWriteApproval('threads_reply_to_thread', approval, threadId);
-    return this.createThread(
-      { text, replyToId: threadId, replyControl },
-      approval
-    );
+    return this.publishThread({ text, replyToId: threadId, replyControl });
   }
 
   async repostThread(
