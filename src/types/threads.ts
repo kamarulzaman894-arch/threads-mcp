@@ -13,7 +13,7 @@ export const ThreadsUserSchema = z.object({
 export const ThreadsMediaSchema = z.object({
   id: z.string(),
   media_product_type: z.string(),
-  media_type: z.enum(['TEXT', 'IMAGE', 'VIDEO', 'CAROUSEL_ALBUM']),
+  media_type: z.enum(['TEXT', 'TEXT_POST', 'IMAGE', 'VIDEO', 'CAROUSEL_ALBUM']),
   media_url: z.string().optional(),
   permalink: z.string(),
   username: z.string().optional(),
