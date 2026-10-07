@@ -31,6 +31,12 @@ type AuthState = {
 };
 
 const authState: AuthState = { authenticated: false };
+let activeAccessToken: string | null = null;
+const completedStates = new Set<string>();
+const inFlightStates = new Map<
+  string,
+  Promise<{ accessToken: string; userId: string; expiresIn: number }>
+>();
 const STATE_TTL_MS = 10 * 60 * 1000;
 
 function createSignedState(): string {
@@ -193,15 +199,32 @@ const server = http.createServer(async (req, res) => {
       return sendHtml(res, 400, '<h1>No authorization code received.</h1>');
     }
 
-    try {
-      const result = await getOAuth().completeOAuthFlow(code);
+    if (completedStates.has(state) && authState.authenticated) {
+      return sendHtml(
+        res,
+        200,
+        '<h1>KZ Threads MCP already connected successfully.</h1><p>You can close this window and return to ChatGPT.</p>'
+      );
+    }
 
+    try {
+      let exchange = inFlightStates.get(state);
+      if (!exchange) {
+        exchange = getOAuth().completeOAuthFlow(code);
+        inFlightStates.set(state, exchange);
+      }
+
+      const result = await exchange;
+
+      activeAccessToken = result.accessToken;
       authState.authenticated = true;
       authState.userId = result.userId;
       authState.expiresAt = Date.now() + result.expiresIn * 1000;
+      completedStates.add(state);
+      inFlightStates.delete(state);
 
       console.error('Threads OAuth completed for user ID:', result.userId);
-      console.error('Token expiry stored in memory; access token is not logged.');
+      console.error('Access token retained in service memory and is not logged.');
 
       return sendHtml(
         res,
@@ -209,6 +232,17 @@ const server = http.createServer(async (req, res) => {
         '<h1>KZ Threads MCP connected successfully.</h1><p>You can close this window and return to ChatGPT.</p>'
       );
     } catch (error) {
+      inFlightStates.delete(state);
+
+      if (authState.authenticated && activeAccessToken) {
+        console.error('Duplicate OAuth callback ignored after successful authentication.');
+        return sendHtml(
+          res,
+          200,
+          '<h1>KZ Threads MCP already connected successfully.</h1><p>You can close this window and return to ChatGPT.</p>'
+        );
+      }
+
       console.error(
         'Threads OAuth exchange failed:',
         error instanceof Error ? error.message : 'Unknown error'
