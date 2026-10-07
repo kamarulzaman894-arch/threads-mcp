@@ -445,6 +445,153 @@ async function runReadSmoke(
   return smoke;
 }
 
+
+async function runRemoteMcpSelfTest(): Promise<void> {
+  if (!mcpBearerToken || !activeAccessToken || !authState.userId) {
+    console.error('Remote MCP self-test: SKIPPED_NOT_READY');
+    return;
+  }
+
+  const endpoint = 'http://127.0.0.1:' + port + '/mcp';
+  const initializeBody = {
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: {
+      protocolVersion: '2025-03-26',
+      capabilities: {},
+      clientInfo: {
+        name: 'kz-remote-mcp-selftest',
+        version: '1.0.0',
+      },
+    },
+  };
+
+  const baseHeaders = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json, text/event-stream',
+  };
+
+  const unauth = await fetch(endpoint, {
+    method: 'POST',
+    headers: baseHeaders,
+    body: JSON.stringify(initializeBody),
+  });
+
+  if (unauth.status !== 401) {
+    throw new Error('Expected unauthenticated MCP request to return 401');
+  }
+
+  const init = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      ...baseHeaders,
+      Authorization: 'Bearer ' + mcpBearerToken,
+    },
+    body: JSON.stringify(initializeBody),
+  });
+
+  if (!init.ok) {
+    throw new Error('Authenticated MCP initialize failed with status ' + init.status);
+  }
+
+  const sessionId = init.headers.get('mcp-session-id');
+  if (!sessionId) {
+    throw new Error('Authenticated MCP initialize did not return a session ID');
+  }
+
+  const protocolHeaders = {
+    ...baseHeaders,
+    Authorization: 'Bearer ' + mcpBearerToken,
+    'mcp-session-id': sessionId,
+    'mcp-protocol-version': '2025-03-26',
+  };
+
+  const initialized = await fetch(endpoint, {
+    method: 'POST',
+    headers: protocolHeaders,
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'notifications/initialized',
+      params: {},
+    }),
+  });
+
+  if (initialized.status !== 202) {
+    throw new Error('MCP initialized notification failed with status ' + initialized.status);
+  }
+
+  const listTools = await fetch(endpoint, {
+    method: 'POST',
+    headers: protocolHeaders,
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/list',
+      params: {},
+    }),
+  });
+
+  if (!listTools.ok) {
+    throw new Error('MCP tools/list failed with status ' + listTools.status);
+  }
+
+  const toolsPayload = (await listTools.json()) as {
+    result?: { tools?: Array<{ name?: string }> };
+  };
+  const toolNames = toolsPayload.result?.tools?.map((tool) => tool.name) ?? [];
+
+  if (toolNames.length !== 17) {
+    throw new Error('Expected 17 MCP tools, received ' + toolNames.length);
+  }
+
+  const profileCall = await fetch(endpoint, {
+    method: 'POST',
+    headers: protocolHeaders,
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: {
+        name: 'threads_get_profile',
+        arguments: {
+          fields: ['id', 'username', 'name'],
+        },
+      },
+    }),
+  });
+
+  if (!profileCall.ok) {
+    throw new Error('MCP read tool call failed with status ' + profileCall.status);
+  }
+
+  const profilePayload = (await profileCall.json()) as {
+    result?: { content?: Array<{ type?: string; text?: string }> };
+  };
+
+  const profileText = profilePayload.result?.content?.find(
+    (item) => item.type === 'text'
+  )?.text;
+
+  if (!profileText || !profileText.includes('kzbinzainal')) {
+    throw new Error('MCP read tool did not return expected profile');
+  }
+
+  await fetch(endpoint, {
+    method: 'DELETE',
+    headers: {
+      Authorization: 'Bearer ' + mcpBearerToken,
+      'mcp-session-id': sessionId,
+      'mcp-protocol-version': '2025-03-26',
+      Accept: 'application/json, text/event-stream',
+    },
+  });
+
+  console.error(
+    'Remote MCP self-test: PASS (401 guard, initialize, 17 tools, profile read)'
+  );
+}
+
 function createSignedState(): string {
   if (!appSecret) throw new Error('OAuth app secret is not configured');
 
@@ -724,6 +871,12 @@ server.listen(port, '0.0.0.0', async () => {
       authState.smoke = await runReadSmoke(stored.accessToken, stored.userId);
       console.error('Persistent Threads token restored successfully.');
       console.error('Read smoke summary:', JSON.stringify(authState.smoke));
+
+      try {
+        await runRemoteMcpSelfTest();
+      } catch (error) {
+        console.error('Remote MCP self-test: FAIL -', checkDetail(error));
+      }
     } else {
       authState.persistent = false;
     }
