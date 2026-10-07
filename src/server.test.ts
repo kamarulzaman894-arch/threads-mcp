@@ -106,7 +106,7 @@ describe('ThreadsMCPServer Integration', () => {
 
     it('should expose exactly 17 human-controlled tools', async () => {
       const serverInstance = (server as any).server;
-      const handler = serverInstance.requestHandlers.get('tools/list');
+      const handler = serverInstance.setRequestHandler.mock.calls[0]?.[1];
       expect(handler).toBeDefined();
 
       const result = await handler({});
