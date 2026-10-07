@@ -66,6 +66,7 @@ TIA and THRIVE are independent consumers. There is no TIA -> THRIVE dependency.
 - Approval-deny regression PASS
 - OAuth scope regression PASS
 - CodeQL PASS
+- GitHub Actions workflow must complete on the V2 branch/PR before merge
 - Live OAuth PASS
 - Live read smoke tests PASS
 - Explicit write approval smoke test PASS before any production write
