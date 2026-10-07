@@ -67,10 +67,8 @@ export class OAuthServer {
           const authUrl = this.oauth.getAuthorizationUrl(
             [
               'threads_basic',
-              'threads_content_publish',
-              'threads_manage_insights',
-              'threads_manage_replies',
               'threads_read_replies',
+              'threads_manage_insights',
             ],
             Math.random().toString(36).substring(7) // CSRF state
           );
