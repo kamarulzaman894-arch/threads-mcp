@@ -3,8 +3,8 @@ import { URL } from 'url';
 import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { ThreadsOAuth } from './auth/oauth.js';
 import { ThreadsClient } from './client/threads-client.js';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
+import * as net from 'net';
+import * as tls from 'tls';
 
 const port = Number(process.env.PORT || 10000);
 const appId = process.env.THREADS_APP_ID;
@@ -14,7 +14,6 @@ const redirectUri =
   process.env.THREADS_REDIRECT_URI ||
   (publicBaseUrl ? publicBaseUrl + '/oauth/callback' : '');
 const redisUrl = process.env.REDIS_URL;
-const execFileAsync = promisify(execFile);
 const TOKEN_KEY = 'kz:threads:oauth-token';
 
 const scopes = [
@@ -61,16 +60,135 @@ const inFlightStates = new Map<
 >();
 const STATE_TTL_MS = 10 * 60 * 1000;
 
-async function redisCli(args: string[]): Promise<string | null> {
+function encodeRedisCommand(parts: string[]): string {
+  let out = '*' + parts.length + '\r\n';
+  for (const part of parts) {
+    out += '$' + Buffer.byteLength(part) + '\r\n' + part + '\r\n';
+  }
+  return out;
+}
+
+function parseRedisReply(raw: string): string | null {
+  const lines = raw.split('\r\n');
+  let index = 0;
+  let last: string | null = null;
+
+  while (index < lines.length) {
+    const line = lines[index++];
+    if (!line) continue;
+
+    if (line.startsWith('+')) {
+      last = line.slice(1);
+      continue;
+    }
+
+    if (line.startsWith('-')) {
+      throw new Error('Redis error: ' + line.slice(1));
+    }
+
+    if (line.startsWith('$')) {
+      const length = Number(line.slice(1));
+      if (length === -1) {
+        last = null;
+        continue;
+      }
+      const value = lines[index++] ?? '';
+      last = value;
+      continue;
+    }
+
+    if (line.startsWith(':')) {
+      last = line.slice(1);
+    }
+  }
+
+  return last;
+}
+
+async function redisCommand(command: string[]): Promise<string | null> {
   if (!redisUrl) return null;
 
-  const { stdout } = await execFileAsync(
-    'redis-cli',
-    ['-u', redisUrl, '--raw', ...args],
-    { timeout: 5000 }
-  );
+  const target = new URL(redisUrl);
+  const host = target.hostname;
+  const port = Number(target.port || (target.protocol === 'rediss:' ? 6380 : 6379));
+  const password = target.password ? decodeURIComponent(target.password) : '';
+  const username = target.username ? decodeURIComponent(target.username) : '';
 
-  return stdout.trim();
+  const commands: string[][] = [];
+  if (password) {
+    commands.push(username ? ['AUTH', username, password] : ['AUTH', password]);
+  }
+  commands.push(command);
+
+  const payload = commands.map(encodeRedisCommand).join('');
+
+  return await new Promise<string | null>((resolve, reject) => {
+    let data = '';
+    let settled = false;
+
+    const onConnect = () => {
+      socket.write(payload);
+    };
+
+    const socket =
+      target.protocol === 'rediss:'
+        ? tls.connect({ host, port, servername: host }, onConnect)
+        : net.createConnection({ host, port }, onConnect);
+
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        socket.destroy();
+        reject(new Error('Redis command timed out'));
+      }
+    }, 5000);
+
+    socket.setEncoding('utf8');
+
+    socket.on('data', (chunk) => {
+      data += chunk;
+
+      try {
+        const result = parseRedisReply(data);
+        const expectedReplies = commands.length;
+        const replyCount = (data.match(/(?:^|\r\n)[+\-$:]/g) || []).length;
+
+        if (!settled && replyCount >= expectedReplies) {
+          settled = true;
+          clearTimeout(timer);
+          socket.end();
+          resolve(result);
+        }
+      } catch (error) {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          socket.destroy();
+          reject(error);
+        }
+      }
+    });
+
+    socket.on('error', (error) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      }
+    });
+
+    socket.on('end', () => {
+      if (!settled) {
+        try {
+          settled = true;
+          clearTimeout(timer);
+          resolve(parseRedisReply(data));
+        } catch (error) {
+          reject(error);
+        }
+      }
+    });
+  });
 }
 
 async function saveToken(token: {
@@ -81,7 +199,7 @@ async function saveToken(token: {
   if (!redisUrl) return false;
 
   const payload = JSON.stringify(token);
-  const result = await redisCli(['SET', TOKEN_KEY, payload]);
+  const result = await redisCommand(['SET', TOKEN_KEY, payload]);
   return result === 'OK';
 }
 
@@ -92,7 +210,7 @@ async function loadToken(): Promise<{
 } | null> {
   if (!redisUrl) return null;
 
-  const value = await redisCli(['GET', TOKEN_KEY]);
+  const value = await redisCommand(['GET', TOKEN_KEY]);
   if (!value) return null;
 
   try {
