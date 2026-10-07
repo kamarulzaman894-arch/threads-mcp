@@ -212,20 +212,6 @@ export class EnhancedThreadsClient extends ThreadsClient {
   }
 
   /**
-   * Invalidate cache entries by prefix
-   */
-  private invalidateCache(prefix: string): void {
-    if (!this.cache) return;
-
-    const keys = this.cache.keys();
-    keys.forEach((key) => {
-      if (key.startsWith(prefix)) {
-        this.cache!.delete(key);
-      }
-    });
-  }
-
-  /**
    * Get webhook manager for subscription management
    */
   getWebhookManager(): WebhookManager | undefined {
