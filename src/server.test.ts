@@ -51,7 +51,6 @@ describe('ThreadsMCPServer Integration', () => {
         permalink: 'https://threads.net/@user/post/123',
         timestamp: '2024-01-01T00:00:00Z',
       }),
-      createThread: vi.fn().mockResolvedValue({ id: 'new-thread-123' }),
       getThreadInsights: vi.fn().mockResolvedValue([
         {
           name: 'views',
@@ -72,7 +71,6 @@ describe('ThreadsMCPServer Integration', () => {
       getConversation: vi.fn().mockResolvedValue({
         data: [{ id: 'thread-123' }, { id: 'reply-1' }],
       }),
-      replyToThread: vi.fn().mockResolvedValue({ id: 'reply-456' }),
     };
 
     server.setClient(mockClient as ThreadsClient);
@@ -143,8 +141,8 @@ describe('ThreadsMCPServer Integration', () => {
       const serverInstance = (server as any).server;
       expect(Server).toHaveBeenCalledWith(
         expect.objectContaining({
-          name: 'threads-mcp',
-          version: '1.0.0',
+          name: 'kz-threads-mcp-readonly',
+          version: '1.0.0-kz-readonly',
         }),
         expect.objectContaining({
           capabilities: expect.objectContaining({
@@ -167,10 +165,6 @@ describe('ThreadsMCPServer Integration', () => {
       expect(Array.isArray(result)).toBe(true);
     });
 
-    it('should process thread creation', async () => {
-      const result = await mockClient.createThread({ text: 'Test' });
-      expect(result).toHaveProperty('id');
-    });
 
     it('should process insights request', async () => {
       const result = await mockClient.getThreadInsights('thread-123', {
