@@ -268,7 +268,15 @@ async function runReadSmoke(
   try {
     const threads = await client.getThreads({
       limit: 5,
-      fields: ['id', 'username', 'text', 'timestamp', 'permalink'],
+      fields: [
+        'id',
+        'media_product_type',
+        'media_type',
+        'permalink',
+        'username',
+        'text',
+        'timestamp',
+      ],
     });
     latestThreadId = threads[0]?.id;
     smoke.threads = {
@@ -281,7 +289,15 @@ async function runReadSmoke(
 
   if (latestThreadId) {
     try {
-      await client.getThread(latestThreadId, ['id', 'username', 'text', 'timestamp']);
+      await client.getThread(latestThreadId, [
+        'id',
+        'media_product_type',
+        'media_type',
+        'permalink',
+        'username',
+        'text',
+        'timestamp',
+      ]);
       smoke.thread = { ok: true, detail: 'latest-post-read-pass' };
     } catch (error) {
       smoke.thread = { ok: false, detail: checkDetail(error) };
