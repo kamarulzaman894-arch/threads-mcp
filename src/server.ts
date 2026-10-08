@@ -464,7 +464,7 @@ export class ThreadsMCPServer {
       }
 
       const { name, arguments: args } = request.params;
-      if (this.readOnly && !name.startsWith('threads_get_') && !['threads_search', 'threads_profile_lookup', 'threads_search_locations'].includes(name)) {
+      if (this.readOnly && !name.startsWith('threads_get_') && !['threads_search', 'threads_profile_lookup', 'threads_search_locations', 'threads_list_my_replies'].includes(name)) {
         throw new Error('READ_ONLY: write and unknown tools are disabled for remote MCP.');
       }
 
