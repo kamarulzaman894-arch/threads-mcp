@@ -286,7 +286,7 @@ export class ThreadsMCPServer {
           },
         },
         {
-          name: 'threads_get_thread',          name: 'threads_get_thread',
+          name: 'threads_get_thread',
           description: 'READ: Get one Threads post by ID.',
           inputSchema: {
             type: 'object',
@@ -454,7 +454,7 @@ export class ThreadsMCPServer {
           },
         },
         {
-          name: 'threads_create_thread',          name: 'threads_create_thread',
+          name: 'threads_create_thread',
           description: 'WRITE: Publish a Threads post. Requires validated KZ approval.',
           inputSchema: {
             type: 'object',
