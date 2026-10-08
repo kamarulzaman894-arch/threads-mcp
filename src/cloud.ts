@@ -74,6 +74,7 @@ const oauthServer = publicBaseUrl ? new McpOAuthServer({
   baseUrl: publicBaseUrl,
   resourceUrl: publicBaseUrl + '/mcp',
   scope: 'threads.read',
+  ownerKeyHash: process.env.KZ_MCP_OWNER_KEY_SHA256 || '',
   getConnectedUserId: () => authState.userId || null,
   store: {
     get: async (key) => redisCommand(['GET', key]),
