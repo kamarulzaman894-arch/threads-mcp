@@ -11,11 +11,15 @@ KZ already runs a separate remote MCP based on the existing threads-mcp reposito
 - `threads_list_my_replies`: authenticated user's replies, cursor and limit support. API `/{user-id}/replies`.
 - `threads_get_public_profile_posts`: posts of exact public username; **requires approval / permissions for profile discovery**. API `/profile_posts?username=...`.
 - `threads_get_publishing_limit`: quota usage via `/{user-id}/threads_publishing_limit`. Does not publish.
+- `threads_get_container_status` and `threads_get_account_insights`: two additional reads.
+- Four approval-gated writes: create video container, create carousel container, publish container, create quote container. All creation methods return unpublished container IDs.
+
+Total MCP registry now contains 26 tools. This is equivalent in capability count, but not an identical name-for-name copy of the Griffin tools (e.g., image publishing is covered by `threads_create_thread`).
 
 Existing tools continue to handle profile, own posts, individual post, search, mentions, lookup, location, insights, replies, conversations.
 
 ## Guardrails
-- Remote HTTPS MCP endpoint continues to expose **only 14 read tools** (previously 11). The internal human-controlled server contains 20 definitions: 14 reads, 6 explicit-approval writes.
+- Remote HTTPS MCP endpoint continues to expose **only 16 read tools** (previously 11). The internal human-controlled server contains 26 definitions: 16 reads, 10 explicit-approval writes.
 - No new write path is enabled, and no autonomous publishing is enabled.
 - Keyword search and profile discovery depend on *actual Meta permissions*; tool presence doesn't guarantee access.
 - Existing OAuth and token flows retained without change.
@@ -24,7 +28,7 @@ Existing tools continue to handle profile, own posts, individual post, search, m
 
 ## Validation
 - Unit tests assert full server tool count and read-only allowlist.
-- Live MCP smoke test expected read-only count updated to 14.
+- Live MCP smoke test expected read-only count updated to 16.
 - **Before production:** `pnpm install --frozen-lockfile && pnpm run build && pnpm test`, and confirm successful Meta OAuth + live calls for own posts, replies, insights, and capability-gated public-posts.
 - Do not merge/deploy without CI green and owner review.
 
