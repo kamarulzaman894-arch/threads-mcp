@@ -37,6 +37,37 @@ const PublicProfilePostsSchema = z.object({
   after: z.string().optional(),
 });
 
+const ContainerStatusSchema = z.object({ containerId: z.string().min(1) });
+const VideoContainerSchema = z.object({
+  videoUrl: z.string().url(),
+  text: z.string().optional(),
+  altText: z.string().optional(),
+  approval: ApprovalSchema,
+});
+const CarouselContainerSchema = z.object({
+  items: z.array(z.object({
+    type: z.enum(['IMAGE', 'VIDEO']),
+    url: z.string().url(),
+    altText: z.string().optional(),
+  })).min(2).max(20),
+  text: z.string().optional(),
+  approval: ApprovalSchema,
+});
+const PublishContainerSchema = z.object({
+  containerId: z.string().min(1),
+  approval: ApprovalSchema,
+});
+const QuoteThreadSchema = z.object({
+  threadId: z.string().min(1),
+  text: z.string().min(1),
+  approval: ApprovalSchema,
+});
+const AccountInsightsSchema = z.object({
+  metrics: z.array(z.string()).min(1),
+  since: z.number().optional(),
+  until: z.number().optional(),
+});
+
 const GetThreadSchema = z.object({
   threadId: z.string().min(1),
   fields: z.array(z.string()).optional(),
@@ -237,7 +268,25 @@ export class ThreadsMCPServer {
           },
         },
         {
-          name: 'threads_get_thread',
+          name: 'threads_get_container_status',
+          description: 'READ: Inspect media container processing status.',
+          inputSchema: { type: 'object', properties: { containerId: { type: 'string' } }, required: ['containerId'] },
+        },
+        {
+          name: 'threads_get_account_insights',
+          description: 'READ: Retrieve account insights separately from post insights.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              metrics: { type: 'array', items: { type: 'string' } },
+              since: { type: 'number' },
+              until: { type: 'number' },
+            },
+            required: ['metrics'],
+          },
+        },
+        {
+          name: 'threads_get_thread',          name: 'threads_get_thread',
           description: 'READ: Get one Threads post by ID.',
           inputSchema: {
             type: 'object',
@@ -354,7 +403,58 @@ export class ThreadsMCPServer {
           },
         },
         {
-          name: 'threads_create_thread',
+          name: 'threads_create_video_container',
+          description: 'WRITE: Create an unpublished video container; requires validated KZ approval.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              videoUrl: { type: 'string' },
+              text: { type: 'string' },
+              altText: { type: 'string' },
+              approval: approvalInput,
+            },
+            required: ['videoUrl', 'approval'],
+          },
+        },
+        {
+          name: 'threads_create_carousel_post',
+          description: 'WRITE: Create an unpublished carousel container; requires validated KZ approval.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              items: { type: 'array', minItems: 2, maxItems: 20, items: {
+                type: 'object', properties: {
+                  type: { type: 'string', enum: ['IMAGE', 'VIDEO'] },
+                  url: { type: 'string' },
+                  altText: { type: 'string' },
+                }, required: ['type','url'],
+              } },
+              text: { type: 'string' },
+              approval: approvalInput,
+            },
+            required: ['items', 'approval'],
+          },
+        },
+        {
+          name: 'threads_publish_container',
+          description: 'WRITE: Publish approved container; requires fresh validated KZ approval.',
+          inputSchema: {
+            type: 'object',
+            properties: { containerId: { type: 'string' }, approval: approvalInput },
+            required: ['containerId', 'approval'],
+          },
+        },
+        {
+          name: 'threads_quote_thread',
+          description: 'WRITE: Create an unpublished quote container; requires validated KZ approval.',
+          inputSchema: {
+            type: 'object',
+            properties: { threadId: { type: 'string' }, text: { type: 'string' }, approval: approvalInput },
+            required: ['threadId', 'text', 'approval'],
+          },
+        },
+        {
+          name: 'threads_create_thread',          name: 'threads_create_thread',
           description: 'WRITE: Publish a Threads post. Requires validated KZ approval.',
           inputSchema: {
             type: 'object',
@@ -489,7 +589,19 @@ export class ThreadsMCPServer {
           case 'threads_get_publishing_limit': {
             return textResult(await this.client.getPublishingLimit());
           }
-          case 'threads_get_thread': {
+          case 'threads_get_container_status': {
+            const params = ContainerStatusSchema.parse(args);
+            return textResult(await this.client.getContainerStatus(params.containerId));
+          }
+          case 'threads_get_account_insights': {
+            const params = AccountInsightsSchema.parse(args);
+            return textResult(await this.client.getUserInsights({
+              metric: params.metrics,
+              since: params.since,
+              until: params.until,
+            }));
+          }
+          case 'threads_get_thread': {          case 'threads_get_thread': {
             const params = GetThreadSchema.parse(args);
             return textResult(await this.client.getThread(params.threadId, params.fields));
           }
@@ -562,7 +674,23 @@ export class ThreadsMCPServer {
               })
             );
           }
-          case 'threads_create_thread': {
+          case 'threads_create_video_container': {
+            const params = VideoContainerSchema.parse(args);
+            return textResult(await this.client.createVideoContainer(params, params.approval));
+          }
+          case 'threads_create_carousel_post': {
+            const params = CarouselContainerSchema.parse(args);
+            return textResult(await this.client.createCarouselContainer(params, params.approval));
+          }
+          case 'threads_publish_container': {
+            const params = PublishContainerSchema.parse(args);
+            return textResult(await this.client.publishContainer(params.containerId, params.approval));
+          }
+          case 'threads_quote_thread': {
+            const params = QuoteThreadSchema.parse(args);
+            return textResult(await this.client.quoteThread(params, params.approval));
+          }
+          case 'threads_create_thread': {          case 'threads_create_thread': {
             const params = CreateThreadSchema.parse(args);
             const { approval, ...threadParams } = params;
             return textResult(await this.client.createThread(threadParams, approval));
