@@ -1,3 +1,4 @@
+import { sanitizeMetaResponse } from '../utils/sanitize-meta-response.js';
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import {
   ThreadsConfig,
@@ -75,14 +76,14 @@ export class ThreadsClient {
       (error: AxiosError) => {
         if (error.response) {
           throw new ThreadsAPIError(
-            error.response.data ? JSON.stringify(error.response.data) : 'Unknown API error',
+            error.response.data ? JSON.stringify(sanitizeMetaResponse(error.response.data)) : 'Unknown API error',
             error.response.status,
-            error.response.data
+            sanitizeMetaResponse(error.response.data)
           );
         } else if (error.request) {
           throw new ThreadsAPIError('No response received from Threads API');
         } else {
-          throw new ThreadsAPIError(`Request failed: ${error.message}`);
+          throw new ThreadsAPIError(`Request failed: ${sanitizeMetaResponse(error.message)}`);
         }
       }
     );
