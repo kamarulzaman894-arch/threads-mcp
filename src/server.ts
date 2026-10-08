@@ -149,7 +149,7 @@ export class ThreadsMCPServer {
   private server: Server;
   private client: ThreadsClient | null = null;
 
-  constructor() {
+  constructor(private readonly readOnly = false) {
     this.server = new Server(
       {
         name: 'kz-threads-mcp-human-controlled',
@@ -408,7 +408,7 @@ export class ThreadsMCPServer {
         },
       ];
 
-      return { tools };
+      return { tools: this.readOnly ? tools.filter((tool) => tool.description?.startsWith('READ:')) : tools };
     });
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -417,6 +417,9 @@ export class ThreadsMCPServer {
       }
 
       const { name, arguments: args } = request.params;
+      if (this.readOnly && !name.startsWith('threads_get_') && !['threads_search', 'threads_profile_lookup', 'threads_search_locations'].includes(name)) {
+        throw new Error('READ_ONLY: write and unknown tools are disabled for remote MCP.');
+      }
 
       try {
         switch (name) {
