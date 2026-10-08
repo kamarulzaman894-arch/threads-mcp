@@ -24,6 +24,19 @@ const GetThreadsSchema = z.object({
   fields: z.array(z.string()).optional(),
 });
 
+const ListMyRepliesSchema = z.object({
+  limit: z.number().int().min(1).max(100).optional(),
+  fields: z.array(z.string()).optional(),
+  after: z.string().optional(),
+});
+
+const PublicProfilePostsSchema = z.object({
+  username: z.string().min(1),
+  limit: z.number().int().min(1).max(100).optional(),
+  fields: z.array(z.string()).optional(),
+  after: z.string().optional(),
+});
+
 const GetThreadSchema = z.object({
   threadId: z.string().min(1),
   fields: z.array(z.string()).optional(),
@@ -187,6 +200,40 @@ export class ThreadsMCPServer {
               limit: { type: 'number', minimum: 1, maximum: 100 },
               fields: { type: 'array', items: { type: 'string' } },
             },
+          },
+        },
+        {
+          name: 'threads_list_my_replies',
+          description: 'READ: List replies authored by the authenticated user.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              limit: { type: 'integer', minimum: 1, maximum: 100 },
+              fields: { type: 'array', items: { type: 'string' } },
+              after: { type: 'string' },
+            },
+          },
+        },
+        {
+          name: 'threads_get_public_profile_posts',
+          description: 'READ: List public posts for an exact username (requires Threads profile discovery permission).',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              username: { type: 'string' },
+              limit: { type: 'integer', minimum: 1, maximum: 100 },
+              fields: { type: 'array', items: { type: 'string' } },
+              after: { type: 'string' },
+            },
+            required: ['username'],
+          },
+        },
+        {
+          name: 'threads_get_publishing_limit',
+          description: 'READ: Retrieve remaining publishing and reply quotas without performing any write.',
+          inputSchema: {
+            type: 'object',
+            properties: {},
           },
         },
         {
@@ -430,6 +477,17 @@ export class ThreadsMCPServer {
           case 'threads_get_threads': {
             const params = GetThreadsSchema.parse(args);
             return textResult(await this.client.getThreads(params));
+          }
+          case 'threads_list_my_replies': {
+            const params = ListMyRepliesSchema.parse(args);
+            return textResult(await this.client.listMyReplies(params));
+          }
+          case 'threads_get_public_profile_posts': {
+            const params = PublicProfilePostsSchema.parse(args);
+            return textResult(await this.client.getPublicProfilePosts(params.username, params));
+          }
+          case 'threads_get_publishing_limit': {
+            return textResult(await this.client.getPublishingLimit());
           }
           case 'threads_get_thread': {
             const params = GetThreadSchema.parse(args);
