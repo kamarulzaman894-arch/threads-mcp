@@ -422,6 +422,95 @@ export class ThreadsClient {
     return ThreadsConversationSchema.parse(response.data);
   }
 
+
+  // Additional Griffin-inspired capabilities. All creations and publication
+  // require a real host-side approval validator (the default is deny-all).
+  async getContainerStatus(containerId: string): Promise<unknown> {
+    const response = await this.client.get(`/${containerId}`, {
+      params: { fields: 'id,status,error_message' },
+    });
+    return response.data;
+  }
+
+  async createVideoContainer(params: {
+    videoUrl: string;
+    text?: string;
+    altText?: string;
+  }, approval: KZWriteApproval): Promise<CreateThreadResponse> {
+    await this.requireWriteApproval('threads_create_video_container', approval);
+    const response = await this.client.post(
+      `/${this.config.userId}/threads`, null,
+      { params: {
+        media_type: 'VIDEO',
+        video_url: params.videoUrl,
+        ...(params.text ? { text: params.text } : {}),
+        ...(params.altText ? { alt_text: params.altText } : {}),
+      } }
+    );
+    return CreateThreadResponseSchema.parse(response.data);
+  }
+
+  async createCarouselContainer(params: {
+    items: Array<{ type: 'IMAGE' | 'VIDEO'; url: string; altText?: string }>;
+    text?: string;
+  }, approval: KZWriteApproval): Promise<CreateThreadResponse> {
+    await this.requireWriteApproval('threads_create_carousel_post', approval);
+    // The MCP input schema also checks this; enforce again at client boundary.
+    if (params.items.length < 2 || params.items.length > 20) {
+      throw new Error('Carousel must contain 2 to 20 media items.');
+    }
+    const ids: string[] = [];
+    for (const item of params.items) {
+      const child = await this.client.post(
+        `/${this.config.userId}/threads`, null,
+        { params: {
+          media_type: item.type,
+          ...(item.type === 'IMAGE' ? { image_url: item.url } : { video_url: item.url }),
+          is_carousel_item: true,
+          ...(item.altText ? { alt_text: item.altText } : {}),
+        } }
+      );
+      ids.push(CreateThreadResponseSchema.parse(child.data).id);
+    }
+    const response = await this.client.post(
+      `/${this.config.userId}/threads`, null,
+      { params: {
+        media_type: 'CAROUSEL',
+        children: ids.join(','),
+        ...(params.text ? { text: params.text } : {}),
+      } }
+    );
+    // Deliberately return an unpublished container. The author must separately
+    // validate every VIDEO child's readiness before publishing.
+    return CreateThreadResponseSchema.parse(response.data);
+  }
+
+  async publishContainer(containerId: string, approval: KZWriteApproval): Promise<CreateThreadResponse> {
+    await this.requireWriteApproval('threads_publish_container', approval, containerId);
+    const response = await this.client.post(
+      `/${this.config.userId}/threads_publish`, null,
+      { params: { creation_id: containerId } }
+    );
+    return CreateThreadResponseSchema.parse(response.data);
+  }
+
+  async quoteThread(params: {
+    threadId: string;
+    text: string;
+  }, approval: KZWriteApproval): Promise<CreateThreadResponse> {
+    await this.requireWriteApproval('threads_quote_thread', approval, params.threadId);
+    const response = await this.client.post(
+      `/${this.config.userId}/threads`, null,
+      { params: {
+        media_type: 'TEXT',
+        text: params.text,
+        quote_post_id: params.threadId,
+      } }
+    );
+    // Create a draft container only; a second, separately approved publish call is required.
+    return CreateThreadResponseSchema.parse(response.data);
+  }
+
   async validateToken(): Promise<boolean> {
     try {
       await this.getProfile(['id']);
