@@ -12,13 +12,15 @@ export const ThreadsUserSchema = z.object({
 
 export const ThreadsMediaSchema = z.object({
   id: z.string(),
-  media_product_type: z.string(),
-  media_type: z.enum(['TEXT', 'TEXT_POST', 'IMAGE', 'VIDEO', 'CAROUSEL_ALBUM']),
+  // The caller may request only a subset of fields. Do not require fields
+  // that were not requested from the Threads API.
+  media_product_type: z.string().optional(),
+  media_type: z.enum(['TEXT', 'TEXT_POST', 'IMAGE', 'VIDEO', 'CAROUSEL_ALBUM']).optional(),
   media_url: z.string().optional(),
-  permalink: z.string(),
+  permalink: z.string().optional(),
   username: z.string().optional(),
   text: z.string().optional(),
-  timestamp: z.string(),
+  timestamp: z.string().optional(),
   shortcode: z.string().optional(),
   thumbnail_url: z.string().optional(),
   children: z
@@ -36,11 +38,18 @@ export const ThreadsMediaSchema = z.object({
 export const ThreadsInsightsSchema = z.object({
   name: z.string(),
   period: z.string(),
+  // Post insights commonly expose values[]. Account-level totals instead
+  // expose total_value.value (e.g. followers_count or engagement totals).
+  // Preserve both shapes; absence of values is not evidence of zero.
   values: z.array(
     z.object({
       value: z.number(),
+      end_time: z.string().optional(),
     })
-  ),
+  ).optional(),
+  total_value: z.object({
+    value: z.union([z.number(), z.record(z.unknown())]),
+  }).passthrough().optional(),
   title: z.string().optional(),
   description: z.string().optional(),
   id: z.string().optional(),
