@@ -256,6 +256,39 @@ describe('Threads Type Schemas', () => {
     });
   });
 
+
+  describe('Sparse API fields and account insights regressions', () => {
+    it('accepts a post with only requested id and text fields', () => {
+      expect(ThreadsMediaSchema.parse({ id: 'post-1', text: 'Hello Threads' }))
+        .toEqual({ id: 'post-1', text: 'Hello Threads' });
+    });
+
+    it('accepts a post missing media_product_type when selected fields omit it', () => {
+      const post = { id: 'post-2', media_type: 'TEXT_POST', permalink: 'https://threads.net/p/2' };
+      expect(ThreadsMediaSchema.parse(post)).toEqual(post);
+    });
+
+    it('accepts account insights with total_value instead of values', () => {
+      const input = { name: 'views', period: 'day', total_value: { value: 115 } };
+      expect(ThreadsInsightsSchema.parse(input)).toEqual(input);
+    });
+
+    it('accepts structured follower breakdown and timestamped daily insight values', () => {
+      const breakdown = { name: 'follower_demographics', period: 'lifetime',
+        total_value: { value: { country: { MY: 25 } } } };
+      const daily = { name: 'views', period: 'day',
+        values: [{ value: 12, end_time: '2026-10-08T00:00:00+0000' }] };
+      expect(ThreadsInsightsSchema.parse(breakdown)).toEqual(breakdown);
+      expect(ThreadsInsightsSchema.parse(daily)).toEqual(daily);
+    });
+
+    it('does not silently treat missing insights as zero', () => {
+      const insight = ThreadsInsightsSchema.parse({ name: 'views', period: 'day' });
+      expect(insight.values).toBeUndefined();
+      expect(insight.total_value).toBeUndefined();
+    });
+  });
+
   describe('Complex scenarios', () => {
     it('should validate media with all optional fields', () => {
       const fullMedia = {
