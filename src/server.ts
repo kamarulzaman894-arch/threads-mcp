@@ -1,3 +1,4 @@
+import { READ_TOOL_NAMES, TOOL_CAPABILITIES } from './authority/capabilities.js';
 import { sanitizeMetaResponse } from './utils/sanitize-meta-response.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -556,7 +557,13 @@ export class ThreadsMCPServer {
         },
       ];
 
-      return { tools: this.readOnly ? tools.filter((tool) => tool.description?.startsWith('READ:')) : tools };
+      const advertisedNames = new Set(tools.map((tool) => tool.name));
+      const expectedNames = new Set(TOOL_CAPABILITIES.map((cap) => cap.name));
+      if (advertisedNames.size !== tools.length || expectedNames.size !== tools.length ||
+          tools.some((tool) => !expectedNames.has(tool.name))) {
+        throw new Error('MCP tool registry is inconsistent with the 26-tool capability contract.');
+      }
+      return { tools: this.readOnly ? tools.filter((tool) => READ_TOOL_NAMES.has(tool.name)) : tools };
     });
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -565,7 +572,7 @@ export class ThreadsMCPServer {
       }
 
       const { name, arguments: args } = request.params;
-      if (this.readOnly && !name.startsWith('threads_get_') && !['threads_search', 'threads_profile_lookup', 'threads_search_locations', 'threads_list_my_replies'].includes(name)) {
+      if (this.readOnly && !READ_TOOL_NAMES.has(name)) {
         throw new Error('READ_ONLY: write and unknown tools are disabled for remote MCP.');
       }
 
