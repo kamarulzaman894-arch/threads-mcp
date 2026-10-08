@@ -368,7 +368,9 @@ export class McpOAuthServer {
       return sendHtml(res, 503, '<h1>Authorization failed.</h1>');
     }
 
-    await this.store.del(key);
+    // Keep the short-lived transaction until TTL so browser form resubmissions
+    // do not report a false expiry immediately after a successful approval.
+    // Authorization codes remain independently single-use in the token endpoint.
 
     const redirect = new URL(txn.redirectUri);
     redirect.searchParams.set('code', code);
