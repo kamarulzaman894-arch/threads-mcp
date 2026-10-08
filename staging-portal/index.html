@@ -1,0 +1,38 @@
+<!doctype html><html lang="ms"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>KZ Threads Staging</title><style>body{font:16px system-ui;background:#121822;color:#fff;max-width:660px;margin:4rem auto;padding:0 20px}input,textarea,button{font:inherit;padding:12px;margin:8px 0;box-sizing:border-box;width:100%;border-radius:8px}button{background:#60a5fa;color:#071322;border:0;font-weight:700}input,textarea{border:1px solid #475569;background:#1f2937;color:#fff}section{border:1px solid #475569;border-radius:12px;padding:18px;margin:16px 0}.muted{color:#a8b2c6}#ops{display:none}pre{white-space:pre-wrap;overflow-wrap:anywhere}label{display:block}</style></head><body><h1>KZ Threads Staging</h1><p class="muted">Owner-only approval. Production read-only. Auto publish OFF.</p><section id="login"><h2>Email OTP</h2><label>Email<input id="email" type="email" value="kamarulzaman894@gmail.com" autocomplete="email"></label><button id="send">Hantar OTP</button><label>Kod OTP<input id="otp" inputmode="numeric" autocomplete="one-time-code" placeholder="Masukkan kod dari email"></label><button id="verify">Sahkan OTP & Aktifkan Owner</button></section><section id="ops"><h2>Draft & Schedule (Staging)</h2><label>Text post<textarea id="text" rows="5" maxlength="500"></textarea></label><button id="draft">Simpan Draft</button><button id="list">Senarai Post</button><hr><p>Untuk post yang telah dibuat, masukkan ID dan revision terkini.</p><label>Post ID<input id="postId" placeholder="UUID"></label><label>Revision<input id="rev" type="number" min="1" value="1"></label><button id="approve">Approve sebagai KZ</button><label>Masa Malaysia<input id="when" type="datetime-local"></label><button id="schedule">Schedule (staging only)</button><button id="cancel">Cancel</button><button id="logout">Log keluar</button></section><section><strong>Status</strong><pre id="status">Belum login. Tiada fungsi publish.</pre></section><script type="module">
+const base='https://nzusiegirpcduqcxtilh.supabase.co';
+const key="sb_publishable_6L8xT9dJbCwCzrBiPNocmA_RfYo1vL5";
+let accessToken=null;
+const $=id=>document.getElementById(id);
+function msg(value){$('status').textContent=typeof value==='string'?value:JSON.stringify(value,null,2)}
+async function api(path,method,body,token){
+ const result=await fetch(base+path,{method,headers:{'apikey':key,'Authorization':'Bearer '+(token||key),'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
+ const data=await result.json().catch(()=>({error:'Non-JSON response'}));
+ if(!result.ok||data?.error) throw Error(JSON.stringify(data));
+ return data;
+}
+async function doAction(fn){try{await fn()}catch(e){msg('Error: '+e.message)}}
+$('send').onclick=()=>doAction(async()=>{
+ const email=$('email').value.trim().toLowerCase();
+ if(email!=='kamarulzaman894@gmail.com')throw Error('Email bukan owner staging');
+ await api('/auth/v1/otp','POST',{email,create_user:true});
+ msg('OTP diminta. Semak email. Jika menerima magic link dan bukannya kod, OTP email template perlu dikonfigurasi dalam Supabase.');
+});
+$('verify').onclick=()=>doAction(async()=>{
+ const email=$('email').value.trim().toLowerCase();
+ const otp=$('otp').value.trim();
+ if(!/^\d{6,8}$/.test(otp))throw Error('Masukkan kod OTP yang sah');
+ const response=await api('/auth/v1/verify','POST',{email,token:otp,type:'email'});
+ const token=response?.access_token;if(!token)throw Error('Tiada sesi login');
+ await api('/rest/v1/rpc/kz_threads_owner_enroll','POST',{},token);
+ accessToken=token;
+ $('ops').style.display='block';msg('Owner disahkan. Staging only. Tiada publishing.');
+});
+async function ownerRpc(name,data){if(!accessToken)throw Error('Sila login dahulu');return api('/rest/v1/rpc/'+name,'POST',data,accessToken)}
+$('draft').onclick=()=>doAction(async()=>{let data=await ownerRpc('kz_threads_owner_draft',{p_text:$('text').value});$('postId').value=data.id;$('rev').value=data.revision;msg(data)});
+$('list').onclick=()=>doAction(async()=>msg(await ownerRpc('kz_threads_owner_posts',{})));
+async function change(action){let data=await ownerRpc('kz_threads_owner_transition',{p_id:$('postId').value,p_expected_revision:Number($('rev').value),p_action:action,...(action==='SCHEDULE'?{p_when:new Date($('when').value).toISOString()}: {})});$('rev').value=data.revision;msg(data)}
+$('approve').onclick=()=>doAction(()=>change('APPROVE'));
+$('schedule').onclick=()=>doAction(()=>change('SCHEDULE'));
+$('cancel').onclick=()=>doAction(()=>change('CANCEL'));
+$('logout').onclick=()=>{accessToken=null;$('ops').style.display='none';msg('Logged out')};
+</script></body></html>
