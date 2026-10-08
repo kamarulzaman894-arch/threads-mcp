@@ -43,6 +43,7 @@ export type McpOAuthConfig = {
   scope: string;
   store: OAuthStore;
   getConnectedUserId: () => string | null;
+  ownerKeyHash: string;
 };
 
 const CLIENT_PREFIX = 'kz:mcp:oauth:client:';
@@ -145,6 +146,7 @@ export class McpOAuthServer {
   private readonly scope: string;
   private readonly store: OAuthStore;
   private readonly getConnectedUserId: () => string | null;
+  private readonly ownerKeyHash: string;
 
   constructor(config: McpOAuthConfig) {
     this.baseUrl = config.baseUrl.replace(/\/$/, '');
@@ -152,6 +154,7 @@ export class McpOAuthServer {
     this.scope = config.scope;
     this.store = config.store;
     this.getConnectedUserId = config.getConnectedUserId;
+    this.ownerKeyHash = config.ownerKeyHash;
   }
 
   protectedResourceMetadata() {
@@ -287,6 +290,9 @@ export class McpOAuthServer {
       return sendHtml(res, 503, '<h1>Authorization storage failed.</h1>');
     }
 
+    if (!this.ownerKeyHash || !/^[a-f0-9]{64}$/i.test(this.ownerKeyHash)) {
+      return sendHtml(res, 503, '<h1>Owner verification is not configured.</h1>');
+    }
     const clientName = escapeHtml(client.clientName || 'ChatGPT');
     sendHtml(
       res,
@@ -305,7 +311,8 @@ export class McpOAuthServer {
         '<input type="hidden" name="txn" value="' +
         escapeHtml(txnId) +
         '">' +
-        '<button type="submit" style="padding:12px 18px;font-size:16px">Authorize read access</button>' +
+        '<label>Owner key <input type="password" name="owner_key" autocomplete="off" required minlength="24"></label>' +
+        '<button type="submit" style="padding:12px 18px;font-size:16px">Verify owner and authorize</button>' +
         '</form></body></html>'
     );
   }
@@ -324,6 +331,10 @@ export class McpOAuthServer {
     }
 
     const form = new URLSearchParams(await readBody(req));
+    const ownerKey = form.get('owner_key') || '';
+    if (!this.ownerKeyHash || ownerKey.length < 24 || !safeEqual(tokenHash(ownerKey), this.ownerKeyHash.toLowerCase())) {
+      return sendHtml(res, 403, '<h1>Owner verification failed.</h1>');
+    }
     const txnId = form.get('txn') || '';
     const key = TXN_PREFIX + txnId;
     const rawTxn = await this.store.get(key);
