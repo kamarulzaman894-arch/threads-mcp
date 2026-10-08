@@ -376,15 +376,22 @@ export class McpOAuthServer {
     redirect.searchParams.set('code', code);
     if (txn.state) redirect.searchParams.set('state', txn.state);
 
-    // A form POST must switch to GET for the external ChatGPT OAuth callback.
-    // 303 is explicit (unlike the browser-dependent semantics of 302).
-    console.info('OAuth owner approved; redirecting authorization code to registered callback');
-    res.writeHead(303, {
-      Location: redirect.toString(),
-      'Cache-Control': 'no-store',
-      'Referrer-Policy': 'no-referrer',
-    });
-    res.end();
+    // Mobile in-app browsers sometimes swallow an external 303 callback.
+    // Show an explicit continuation link as a fallback, while attempting
+    // a top-level navigation. Never log or persist the authorization code.
+    console.info('OAuth owner approved; continuation page issued for registered callback');
+    const target = escapeHtml(redirect.toString());
+    return sendHtml(res, 200,
+      '<!doctype html><html><head><meta charset="utf-8">' +
+      '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+      '<title>Authorization approved</title></head>' +
+      '<body style="font-family:system-ui;max-width:560px;margin:50px auto;padding:24px">' +
+      '<h1>Owner verified</h1><p>Continue to ChatGPT to finish connecting KZ Threads MCP.</p>' +
+      '<p><a style="display:inline-block;padding:14px 20px;background:#111;color:#fff;border-radius:8px;text-decoration:none" href="' + target + '">Continue to ChatGPT</a></p>' +
+      '<p>If the app does not open automatically, tap the button above.</p>' +
+      '<script>setTimeout(function(){window.location.assign(' + JSON.stringify(redirect.toString()) + ');},800);</script>' +
+      '</body></html>'
+    );
   }
 
   async token(
