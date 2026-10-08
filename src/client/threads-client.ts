@@ -1,3 +1,4 @@
+import { sanitizeMetaResponse } from '../utils/sanitize-meta-response.js';
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import {
   ThreadsConfig,
@@ -75,14 +76,14 @@ export class ThreadsClient {
       (error: AxiosError) => {
         if (error.response) {
           throw new ThreadsAPIError(
-            error.response.data ? JSON.stringify(error.response.data) : 'Unknown API error',
+            error.response.data ? JSON.stringify(sanitizeMetaResponse(error.response.data)) : 'Unknown API error',
             error.response.status,
-            error.response.data
+            sanitizeMetaResponse(error.response.data)
           );
         } else if (error.request) {
           throw new ThreadsAPIError('No response received from Threads API');
         } else {
-          throw new ThreadsAPIError(`Request failed: ${error.message}`);
+          throw new ThreadsAPIError(`Request failed: ${sanitizeMetaResponse(error.message)}`);
         }
       }
     );
@@ -145,6 +146,48 @@ export class ThreadsClient {
     return response.data.data.map((item: unknown) => ThreadsMediaSchema.parse(item));
   }
 
+  // Extra read tools based on the capability map in griffinwork40/threads-mcp.
+  // Implemented independently against official Meta Threads API endpoints.
+  async listMyReplies(params?: {
+    limit?: number;
+    fields?: string[];
+    after?: string;
+  }): Promise<unknown> {
+    const fields = params?.fields ?? ['id', 'text', 'username', 'permalink', 'timestamp'];
+    const response = await this.client.get(`/${this.config.userId}/replies`, {
+      params: {
+        fields: fields.join(','),
+        limit: params?.limit ?? 25,
+        ...(params?.after ? { after: params.after } : {}),
+      },
+    });
+    return response.data;
+  }
+
+  async getPublicProfilePosts(username: string, params?: {
+    limit?: number;
+    fields?: string[];
+    after?: string;
+  }): Promise<unknown> {
+    const fields = params?.fields ?? ['id', 'text', 'username', 'permalink', 'timestamp', 'media_type'];
+    const response = await this.client.get('/profile_posts', {
+      params: {
+        username,
+        fields: fields.join(','),
+        limit: params?.limit ?? 25,
+        ...(params?.after ? { after: params.after } : {}),
+      },
+    });
+    return response.data;
+  }
+
+  async getPublishingLimit(): Promise<unknown> {
+    const response = await this.client.get(`/${this.config.userId}/threads_publishing_limit`, {
+      params: { fields: 'quota_usage,config,reply_quota_usage,reply_config' },
+    });
+    return response.data;
+  }
+
   async getThread(threadId: string, fields?: string[]): Promise<ThreadsMedia> {
     const defaultFields = [
       'id',
@@ -197,7 +240,7 @@ export class ThreadsClient {
     const response = await this.client.get('/profile_lookup', {
       params: {
         username,
-        ...(params?.fields && { fields: params.fields.join(',') }),
+        fields: (params?.fields ?? ['username','name','threads_biography','threads_profile_picture_url']).join(','),
       },
     });
     return response.data;
@@ -378,6 +421,95 @@ export class ThreadsClient {
     });
 
     return ThreadsConversationSchema.parse(response.data);
+  }
+
+
+  // Additional Griffin-inspired capabilities. All creations and publication
+  // require a real host-side approval validator (the default is deny-all).
+  async getContainerStatus(containerId: string): Promise<unknown> {
+    const response = await this.client.get(`/${containerId}`, {
+      params: { fields: 'id,status,error_message' },
+    });
+    return response.data;
+  }
+
+  async createVideoContainer(params: {
+    videoUrl: string;
+    text?: string;
+    altText?: string;
+  }, approval: KZWriteApproval): Promise<CreateThreadResponse> {
+    await this.requireWriteApproval('threads_create_video_container', approval);
+    const response = await this.client.post(
+      `/${this.config.userId}/threads`, null,
+      { params: {
+        media_type: 'VIDEO',
+        video_url: params.videoUrl,
+        ...(params.text ? { text: params.text } : {}),
+        ...(params.altText ? { alt_text: params.altText } : {}),
+      } }
+    );
+    return CreateThreadResponseSchema.parse(response.data);
+  }
+
+  async createCarouselContainer(params: {
+    items: Array<{ type: 'IMAGE' | 'VIDEO'; url: string; altText?: string }>;
+    text?: string;
+  }, approval: KZWriteApproval): Promise<CreateThreadResponse> {
+    await this.requireWriteApproval('threads_create_carousel_post', approval);
+    // The MCP input schema also checks this; enforce again at client boundary.
+    if (params.items.length < 2 || params.items.length > 20) {
+      throw new Error('Carousel must contain 2 to 20 media items.');
+    }
+    const ids: string[] = [];
+    for (const item of params.items) {
+      const child = await this.client.post(
+        `/${this.config.userId}/threads`, null,
+        { params: {
+          media_type: item.type,
+          ...(item.type === 'IMAGE' ? { image_url: item.url } : { video_url: item.url }),
+          is_carousel_item: true,
+          ...(item.altText ? { alt_text: item.altText } : {}),
+        } }
+      );
+      ids.push(CreateThreadResponseSchema.parse(child.data).id);
+    }
+    const response = await this.client.post(
+      `/${this.config.userId}/threads`, null,
+      { params: {
+        media_type: 'CAROUSEL',
+        children: ids.join(','),
+        ...(params.text ? { text: params.text } : {}),
+      } }
+    );
+    // Deliberately return an unpublished container. The author must separately
+    // validate every VIDEO child's readiness before publishing.
+    return CreateThreadResponseSchema.parse(response.data);
+  }
+
+  async publishContainer(containerId: string, approval: KZWriteApproval): Promise<CreateThreadResponse> {
+    await this.requireWriteApproval('threads_publish_container', approval, containerId);
+    const response = await this.client.post(
+      `/${this.config.userId}/threads_publish`, null,
+      { params: { creation_id: containerId } }
+    );
+    return CreateThreadResponseSchema.parse(response.data);
+  }
+
+  async quoteThread(params: {
+    threadId: string;
+    text: string;
+  }, approval: KZWriteApproval): Promise<CreateThreadResponse> {
+    await this.requireWriteApproval('threads_quote_thread', approval, params.threadId);
+    const response = await this.client.post(
+      `/${this.config.userId}/threads`, null,
+      { params: {
+        media_type: 'TEXT',
+        text: params.text,
+        quote_post_id: params.threadId,
+      } }
+    );
+    // Create a draft container only; a second, separately approved publish call is required.
+    return CreateThreadResponseSchema.parse(response.data);
   }
 
   async validateToken(): Promise<boolean> {
