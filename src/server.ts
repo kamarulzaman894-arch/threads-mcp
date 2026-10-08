@@ -558,7 +558,7 @@ export class ThreadsMCPServer {
       ];
 
       const advertisedNames = new Set(tools.map((tool) => tool.name));
-      const expectedNames = new Set(TOOL_CAPABILITIES.map((cap) => cap.name));
+      const expectedNames: Set<string> = new Set(TOOL_CAPABILITIES.map((cap) => cap.name));
       if (advertisedNames.size !== tools.length || expectedNames.size !== tools.length ||
           tools.some((tool) => !expectedNames.has(tool.name))) {
         throw new Error('MCP tool registry is inconsistent with the 26-tool capability contract.');
