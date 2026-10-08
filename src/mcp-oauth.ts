@@ -294,6 +294,13 @@ export class McpOAuthServer {
       return sendHtml(res, 503, '<h1>Authorization storage failed.</h1>');
     }
 
+    const verifiedTxn = await this.store.get(TXN_PREFIX + txnId);
+    if (verifiedTxn !== JSON.stringify(txn)) {
+      console.error('OAuth transaction could not be read immediately after storage');
+      return sendHtml(res, 503, '<h1>Authorization storage verification failed.</h1>');
+    }
+    console.info('OAuth transaction stored and verified');
+
     const clientName = escapeHtml(client.clientName || 'ChatGPT');
     sendHtml(
       res,
@@ -341,8 +348,10 @@ export class McpOAuthServer {
     const rawTxn = await this.store.get(key);
     const txn = rawTxn ? (JSON.parse(rawTxn) as OAuthTxn) : null;
     if (!txn) {
-      return sendHtml(res, 400, '<h1>Authorization session expired.</h1>');
+      console.error('OAuth transaction missing at approval');
+      return sendHtml(res, 400, '<h1>Authorization session expired. Please start a new connection.</h1>');
     }
+    console.info('OAuth transaction found at approval');
 
     const code = randomToken();
     const codeRecord: OAuthCode = {
