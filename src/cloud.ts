@@ -144,7 +144,7 @@ async function handleMcpRequest(
     });
   }
 
-  const mcpServer = new ThreadsMCPServer();
+  const mcpServer = new ThreadsMCPServer(true);
   mcpServer.setClient(
     new ThreadsClient({
       accessToken: activeAccessToken,
@@ -552,8 +552,8 @@ async function runRemoteMcpSelfTest(): Promise<void> {
   };
   const toolNames = toolsPayload.result?.tools?.map((tool) => tool.name) ?? [];
 
-  if (toolNames.length !== 17) {
-    throw new Error('Expected 17 MCP tools, received ' + toolNames.length);
+  if (toolNames.length !== 11 || toolNames.some((name) => !name || ['threads_create_thread', 'threads_reply_to_thread', 'threads_repost_thread', 'threads_delete_thread', 'threads_manage_reply', 'threads_manage_pending_reply'].includes(name))) {
+    throw new Error('Expected 11 read-only MCP tools, received ' + toolNames.join(','));
   }
 
   const profileCall = await fetch(endpoint, {
