@@ -104,13 +104,13 @@ describe('ThreadsMCPServer Integration', () => {
       expect(listToolsCalls.length).toBeGreaterThanOrEqual(0);
     });
 
-    it('should expose exactly 20 human-controlled tools', async () => {
+    it('should expose exactly 26 human-controlled tools', async () => {
       const serverInstance = (server as any).server;
       const handler = serverInstance.setRequestHandler.mock.calls[0]?.[1];
       expect(handler).toBeDefined();
 
       const result = await handler({});
-      expect(result.tools).toHaveLength(20);
+      expect(result.tools).toHaveLength(26);
 
       const names = result.tools.map((tool: any) => tool.name);
       expect(names).toContain('threads_search');
@@ -118,18 +118,20 @@ describe('ThreadsMCPServer Integration', () => {
       expect(names).toContain('threads_list_my_replies');
       expect(names).toContain('threads_get_public_profile_posts');
       expect(names).toContain('threads_get_publishing_limit');
+    expect(names).toContain('threads_get_container_status');
+    expect(names).toContain('threads_get_account_insights');
       expect(names).toContain('threads_create_thread');
       expect(names).toContain('threads_delete_thread');
       expect(names).toContain('threads_manage_pending_reply');
     });
   });
 
-  it('read-only mode lists 14 tools and excludes all writes', async () => {
+  it('read-only mode lists 16 tools and excludes all writes', async () => {
     const readOnly = new ThreadsMCPServer(true);
     const instance = (readOnly as any).server;
     const listHandler = instance.setRequestHandler.mock.calls[0][1];
     const result = await listHandler({});
-    expect(result.tools).toHaveLength(14);
+    expect(result.tools).toHaveLength(16);
     const names = result.tools.map((tool: any) => tool.name);
     expect(names).toContain('threads_list_my_replies');
     expect(names).toContain('threads_get_public_profile_posts');
