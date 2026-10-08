@@ -1,4 +1,4 @@
-<!doctype html><html lang="ms"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>KZ Threads Staging</title><style>body{font:16px system-ui;background:#121822;color:#fff;max-width:660px;margin:4rem auto;padding:0 20px}input,textarea,button{font:inherit;padding:12px;margin:8px 0;box-sizing:border-box;width:100%;border-radius:8px}button{background:#60a5fa;color:#071322;border:0;font-weight:700}input,textarea{border:1px solid #475569;background:#1f2937;color:#fff}section{border:1px solid #475569;border-radius:12px;padding:18px;margin:16px 0}.muted{color:#a8b2c6}#ops{display:none}pre{white-space:pre-wrap;overflow-wrap:anywhere}label{display:block}</style></head><body><h1>KZ Threads Staging</h1><p class="muted">Owner-only approval. Production read-only. Auto publish OFF.</p><section id="login"><h2>Email OTP</h2><label>Email<input id="email" type="email" placeholder="Email owner" autocomplete="email"></label><button id="send">Hantar OTP</button><label>Kod OTP<input id="otp" inputmode="numeric" autocomplete="one-time-code" placeholder="Masukkan kod dari email"></label><button id="verify">Sahkan OTP & Aktifkan Owner</button></section><section id="ops"><h2>Draft & Schedule (Staging)</h2><label>Text post<textarea id="text" rows="5" maxlength="500"></textarea></label><button id="draft">Simpan Draft</button><button id="list">Senarai Post</button><hr><p>Untuk post yang telah dibuat, masukkan ID dan revision terkini.</p><label>Post ID<input id="postId" placeholder="UUID"></label><label>Revision<input id="rev" type="number" min="1" value="1"></label><button id="approve">Approve sebagai KZ</button><label>Masa Malaysia<input id="when" type="datetime-local"></label><button id="schedule">Schedule (staging only)</button><button id="cancel">Cancel</button><button id="logout">Log keluar</button></section><section><strong>Status</strong><pre id="status">Belum login. Tiada fungsi publish.</pre></section><script type="module">
+<!doctype html><html lang="ms"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>KZ Threads Staging</title><style>body{font:16px system-ui;background:#121822;color:#fff;max-width:660px;margin:4rem auto;padding:0 20px}input,textarea,button{font:inherit;padding:12px;margin:8px 0;box-sizing:border-box;width:100%;border-radius:8px}button{background:#60a5fa;color:#071322;border:0;font-weight:700}input,textarea{border:1px solid #475569;background:#1f2937;color:#fff}section{border:1px solid #475569;border-radius:12px;padding:18px;margin:16px 0}.muted{color:#a8b2c6}#ops{display:none}pre{white-space:pre-wrap;overflow-wrap:anywhere}label{display:block}</style></head><body><h1>KZ Threads Staging</h1><p class="muted">Owner-only approval. Production read-only. Auto publish OFF.</p><section id="login"><h2>Email OTP</h2><label>Email<input id="email" type="email" placeholder="Email owner" autocomplete="email"></label><button id="send">Hantar OTP</button><label>Kod OTP<input id="otp" inputmode="numeric" autocomplete="one-time-code" placeholder="Masukkan kod dari email"></label><button id="verify">Sahkan OTP & Aktifkan Owner</button></section><section id="ops"><h2>Draft & Schedule (Staging)</h2><label>Text post<textarea id="text" rows="5" maxlength="500"></textarea></label><button id="draft">Simpan Draft Baharu</button><button id="revise">Simpan Perubahan Draft</button><button id="list">Senarai Post / Refresh</button><hr><p>Untuk post yang telah dibuat, masukkan ID dan revision terkini.</p><label>Post ID<input id="postId" placeholder="UUID"></label><label>Revision<input id="rev" type="number" min="1" value="1"></label><button id="approve">Approve sebagai KZ</button><label>Masa jadual (zon masa peranti; semak waktu sebelum sahkan)<input id="when" type="datetime-local"></label><button id="schedule">Schedule (staging only)</button><button id="cancel">Cancel</button><button id="logout">Log keluar</button></section><section><strong>Status</strong><pre id="status">Belum login. Tiada fungsi publish.</pre></section><script type="module">
 const base='https://nzusiegirpcduqcxtilh.supabase.co';
 const key="sb_publishable_6L8xT9dJbCwCzrBiPNocmA_RfYo1vL5";
 let accessToken=null;
@@ -28,9 +28,38 @@ $('verify').onclick=()=>doAction(async()=>{
  $('ops').style.display='block';msg('Owner disahkan. Staging only. Tiada publishing.');
 });
 async function ownerRpc(name,data){if(!accessToken)throw Error('Sila login dahulu');return api('/rest/v1/rpc/'+name,'POST',data,accessToken)}
+async function currentPost() {
+  const id=$('postId').value.trim(), rev=Number($('rev').value);
+  if(!id || !Number.isSafeInteger(rev) || rev<1)throw Error('Masukkan ID dan revision post yang sah.');
+  const list=await ownerRpc('kz_threads_owner_posts',{});
+  const post=list.find(x=>x.id===id);
+  if(!post)throw Error('Post tidak dijumpai dalam 50 post terbaru.');
+  if(post.revision!==rev)throw Error('Revision sudah berubah. Refresh post dahulu.');
+  return post;
+}
 $('draft').onclick=()=>doAction(async()=>{let data=await ownerRpc('kz_threads_owner_draft',{p_text:$('text').value});$('postId').value=data.id;$('rev').value=data.revision;msg(data)});
+$('revise').onclick=()=>doAction(async()=>{const p=await currentPost();if(p.status==='PUBLISHING'||p.status==='PUBLISHED')throw Error('Post sudah dikunci');let data=await ownerRpc('kz_threads_owner_transition',{p_id:p.id,p_expected_revision:p.revision,p_action:'REVISE',p_text:$('text').value});$('rev').value=data.revision;msg({...data,notice:'Perubahan disimpan; approval perlu dibuat semula.'})});
 $('list').onclick=()=>doAction(async()=>msg(await ownerRpc('kz_threads_owner_posts',{})));
-async function change(action){let data=await ownerRpc('kz_threads_owner_transition',{p_id:$('postId').value,p_expected_revision:Number($('rev').value),p_action:action,...(action==='SCHEDULE'?{p_when:new Date($('when').value).toISOString()}: {})});$('rev').value=data.revision;msg(data)}
+async function change(action){
+  const post=await currentPost();
+  const localText=$('text').value.trim();
+  if(action==='APPROVE'){
+    if(post.status!=='DRAFT')throw Error('Status DRAFT diperlukan.');
+    if(localText!==post.text_content)throw Error('Text dalam editor tidak sama dengan draft tersimpan. Klik Simpan Perubahan Draft dahulu.');
+    if(!confirm('LULUSKAN versi '+post.revision+' ini?\\n\\n'+post.text_content))return;
+  }
+  let when={};
+  if(action==='SCHEDULE'){
+    if(post.status!=='APPROVED')throw Error('Post mesti APPROVED sebelum schedule.');
+    const timestamp=new Date($('when').value);
+    if(!Number.isFinite(timestamp.getTime())||timestamp<=new Date())throw Error('Pilih tarikh dan masa pada masa hadapan.');
+    if(!confirm('JADUALKAN post pada '+timestamp.toLocaleString('ms-MY',{timeZone:'Asia/Kuala_Lumpur'})+' (Malaysia)?\\n\\n'+post.text_content+'\\n\\nIni STAGING, bukan auto publish.'))return;
+    when={p_when:timestamp.toISOString()};
+  }
+  if(action==='CANCEL'&&!confirm('Batalkan post '+post.id+'?'))return;
+  const data=await ownerRpc('kz_threads_owner_transition',{p_id:post.id,p_expected_revision:post.revision,p_action:action,...when});
+  $('rev').value=data.revision;msg(data);
+}
 $('approve').onclick=()=>doAction(()=>change('APPROVE'));
 $('schedule').onclick=()=>doAction(()=>change('SCHEDULE'));
 $('cancel').onclick=()=>doAction(()=>change('CANCEL'));
