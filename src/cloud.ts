@@ -552,7 +552,7 @@ async function runRemoteMcpSelfTest(): Promise<void> {
   };
   const toolNames = toolsPayload.result?.tools?.map((tool) => tool.name) ?? [];
 
-  if (toolNames.length !== 11 || toolNames.some((name) => !name || ['threads_create_thread', 'threads_reply_to_thread', 'threads_repost_thread', 'threads_delete_thread', 'threads_manage_reply', 'threads_manage_pending_reply'].includes(name))) {
+  if (toolNames.length !== 14 || toolNames.some((name) => !name || ['threads_create_thread', 'threads_reply_to_thread', 'threads_repost_thread', 'threads_delete_thread', 'threads_manage_reply', 'threads_manage_pending_reply'].includes(name))) {
     throw new Error('Expected 11 read-only MCP tools, received ' + toolNames.join(','));
   }
 
@@ -599,7 +599,7 @@ async function runRemoteMcpSelfTest(): Promise<void> {
   });
 
   console.error(
-    'Remote MCP self-test: PASS (401 guard, initialize, 17 tools, profile read)'
+    'Remote MCP self-test: PASS (401 guard, initialize, 14 read-only tools, profile read)'
   );
 }
 
