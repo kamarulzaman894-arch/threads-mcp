@@ -376,9 +376,13 @@ export class McpOAuthServer {
     redirect.searchParams.set('code', code);
     if (txn.state) redirect.searchParams.set('state', txn.state);
 
-    res.writeHead(302, {
+    // A form POST must switch to GET for the external ChatGPT OAuth callback.
+    // 303 is explicit (unlike the browser-dependent semantics of 302).
+    console.info('OAuth owner approved; redirecting authorization code to registered callback');
+    res.writeHead(303, {
       Location: redirect.toString(),
       'Cache-Control': 'no-store',
+      'Referrer-Policy': 'no-referrer',
     });
     res.end();
   }
