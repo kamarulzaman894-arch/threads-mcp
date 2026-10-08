@@ -145,6 +145,48 @@ export class ThreadsClient {
     return response.data.data.map((item: unknown) => ThreadsMediaSchema.parse(item));
   }
 
+  // Extra read tools based on the capability map in griffinwork40/threads-mcp.
+  // Implemented independently against official Meta Threads API endpoints.
+  async listMyReplies(params?: {
+    limit?: number;
+    fields?: string[];
+    after?: string;
+  }): Promise<unknown> {
+    const fields = params?.fields ?? ['id', 'text', 'username', 'permalink', 'timestamp'];
+    const response = await this.client.get(`/${this.config.userId}/replies`, {
+      params: {
+        fields: fields.join(','),
+        limit: params?.limit ?? 25,
+        ...(params?.after ? { after: params.after } : {}),
+      },
+    });
+    return response.data;
+  }
+
+  async getPublicProfilePosts(username: string, params?: {
+    limit?: number;
+    fields?: string[];
+    after?: string;
+  }): Promise<unknown> {
+    const fields = params?.fields ?? ['id', 'text', 'username', 'permalink', 'timestamp', 'media_type'];
+    const response = await this.client.get('/profile_posts', {
+      params: {
+        username,
+        fields: fields.join(','),
+        limit: params?.limit ?? 25,
+        ...(params?.after ? { after: params.after } : {}),
+      },
+    });
+    return response.data;
+  }
+
+  async getPublishingLimit(): Promise<unknown> {
+    const response = await this.client.get(`/${this.config.userId}/threads_publishing_limit`, {
+      params: { fields: 'quota_usage,config,reply_quota_usage,reply_config' },
+    });
+    return response.data;
+  }
+
   async getThread(threadId: string, fields?: string[]): Promise<ThreadsMedia> {
     const defaultFields = [
       'id',
