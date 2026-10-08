@@ -44,6 +44,7 @@ type SmokeResult = {
   thread?: SmokeCheck;
   replies?: SmokeCheck;
   search?: SmokeCheck;
+  publicSearch?: SmokeCheck;
   insights?: SmokeCheck;
 };
 
@@ -443,14 +444,26 @@ async function runReadSmoke(
   }
 
   try {
-    await client.searchThreads('marketing', {
+    const result = await client.searchThreads('marketing', {
       searchType: 'TOP',
       limit: 3,
       fields: ['id', 'username', 'text', 'timestamp', 'permalink'],
-    });
-    smoke.search = { ok: true, detail: 'keyword-search-pass' };
+    }) as {
+      search_metadata?: {
+        public_search_verified?: boolean;
+        visibility?: string;
+      };
+    };
+    // The endpoint can return HTTP 200 while Meta limits search to own posts.
+    // Keep transport health separate from observed public-search capability.
+    smoke.search = { ok: true, detail: 'keyword-endpoint-pass' };
+    smoke.publicSearch = {
+      ok: result.search_metadata?.public_search_verified === true,
+      detail: result.search_metadata?.visibility || 'UNVERIFIED',
+    };
   } catch (error) {
     smoke.search = { ok: false, detail: checkDetail(error) };
+    smoke.publicSearch = { ok: false, detail: 'UNVERIFIED' };
   }
 
   return smoke;

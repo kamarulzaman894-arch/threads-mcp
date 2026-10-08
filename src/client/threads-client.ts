@@ -41,6 +41,7 @@ export class ThreadsClient {
   private client: AxiosInstance;
   private config: ThreadsConfig;
   private baseUrl: string;
+  private ownUsernamePromise?: Promise<string | undefined>;
 
   constructor(config: ThreadsConfig) {
     this.config = {
@@ -169,18 +170,77 @@ export class ThreadsClient {
     return ThreadsMediaSchema.parse(response.data);
   }
 
+  private getOwnUsername(): Promise<string | undefined> {
+    if (!this.ownUsernamePromise) {
+      this.ownUsernamePromise = this.getProfile(['id', 'username'])
+        .then((profile) => profile.username)
+        .catch(() => undefined);
+    }
+    return this.ownUsernamePromise;
+  }
+
   async searchThreads(query: string, params?: SearchThreadsParams): Promise<unknown> {
+    // Always request author identity: a successful keyword API call alone does not
+    // prove that Meta has approved public discovery for the connected app.
+    const requestFields = [...new Set([
+      'id',
+      'username',
+      ...(params?.fields || ['text', 'timestamp', 'permalink', 'media_type']),
+    ])];
+
     const response = await this.client.get('/keyword_search', {
       params: {
         q: query,
         search_type: params?.searchType || 'TOP',
-        ...(params?.fields && { fields: params.fields.join(',') }),
+        fields: requestFields.join(','),
         ...(params?.limit && { limit: params.limit }),
         ...(params?.since && { since: params.since }),
         ...(params?.until && { until: params.until }),
       },
     });
-    return response.data;
+
+    const result = response.data as {
+      data?: Array<{ username?: string }>;
+      paging?: { cursors?: { before?: string; after?: string } };
+      [key: string]: unknown;
+    };
+    const rows = Array.isArray(result.data) ? result.data : [];
+    const ownUsername = await this.getOwnUsername();
+    const authors = [...new Set(
+      rows.map((row) => row.username).filter((name): name is string => Boolean(name))
+    )];
+    const ownAccountOnly = Boolean(
+      ownUsername &&
+      rows.length > 0 &&
+      rows.every((row) => row.username?.toLowerCase() === ownUsername.toLowerCase())
+    );
+    const externalAuthorsObserved = Boolean(
+      (ownUsername && authors.some((name) => name.toLowerCase() !== ownUsername.toLowerCase())) ||
+      authors.length > 1
+    );
+    const visibility = ownAccountOnly
+      ? 'OWN_ACCOUNT_ONLY_OBSERVED'
+      : externalAuthorsObserved
+        ? 'PUBLIC_AUTHORS_OBSERVED'
+        : 'UNVERIFIED';
+
+    // Meta's paging.next can embed the bearer access_token in its query string.
+    // Return opaque cursors only; never hand the token-bearing URL to MCP clients.
+    return {
+      ...result,
+      ...(result.paging && { paging: { cursors: result.paging.cursors } }),
+      search_metadata: {
+        keyword: query,
+        search_type: params?.searchType || 'TOP',
+        result_count: rows.length,
+        unique_authors: authors.length,
+        visibility,
+        public_search_verified: externalAuthorsObserved,
+        ...(ownAccountOnly && {
+          note: 'Only posts from the connected account were returned. Public discovery is not verified. Check Meta App Review approval for threads_keyword_search; do not report these as platform-wide search results.',
+        }),
+      },
+    };
   }
 
   async getMentions(params?: GetMediaParams): Promise<unknown> {
