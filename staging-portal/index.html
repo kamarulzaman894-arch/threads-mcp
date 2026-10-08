@@ -19,7 +19,7 @@ $('send').onclick=()=>doAction(async()=>{
  if(!email.includes('@'))throw Error('Sila masukkan alamat email yang sah.');
  $('send').disabled=true;
  try{
-   await api('/auth/v1/otp','POST',{email,create_user:true,redirect_to:portalRedirect});
+   await api('/auth/v1/otp?redirect_to='+encodeURIComponent(portalRedirect),'POST',{email,create_user:true});
    msg('Magic Link telah diminta. Buka email TERBARU dan klik link dalam Chrome. Jika link membawa ke localhost:3000, benarkan URL portal dalam Supabase Authentication > URL Configuration.');
  }finally{$('send').disabled=false;}
 });
