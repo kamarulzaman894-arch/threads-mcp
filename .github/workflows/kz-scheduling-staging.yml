@@ -1,0 +1,27 @@
+name: KZ Threads Scheduling Staging Tests
+on:
+  push:
+    branches:
+      - kz-scheduled-publishing-v1
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  scheduling-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.20.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Compile
+        run: pnpm run build
+      - name: Approval and scheduling regression
+        run: pnpm exec vitest run src/scheduling/scheduled-publishing.test.ts
