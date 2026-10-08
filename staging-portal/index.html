@@ -5,7 +5,9 @@ let accessToken=null;
 const $=id=>document.getElementById(id);
 function msg(value){$('status').textContent=typeof value==='string'?value:JSON.stringify(value,null,2)}
 async function api(path,method,body,token){
- const result=await fetch(base+path,{method,headers:{'apikey':key,'Authorization':'Bearer '+(token||key),'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
+ const headers={'apikey':key,'Content-Type':'application/json'};
+ if(token)headers['Authorization']='Bearer '+token;
+ const result=await fetch(base+path,{method,headers,body:body?JSON.stringify(body):undefined});
  const data=await result.json().catch(()=>({error:'Non-JSON response'}));
  if(!result.ok||data?.error) throw Error(JSON.stringify(data));
  return data;
