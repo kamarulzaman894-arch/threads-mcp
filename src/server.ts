@@ -1,3 +1,4 @@
+import { sanitizeMetaResponse } from './utils/sanitize-meta-response.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
@@ -737,7 +738,7 @@ export class ThreadsMCPServer {
         if (error instanceof z.ZodError) {
           throw new Error(`Invalid parameters: ${JSON.stringify(error.errors)}`);
         }
-        throw error;
+        throw new Error(String(sanitizeMetaResponse(error instanceof Error ? error.message : error)));
       }
     });
   }
@@ -761,7 +762,7 @@ function textResult(value: unknown) {
     content: [
       {
         type: 'text' as const,
-        text: JSON.stringify(value, null, 2),
+        text: JSON.stringify(sanitizeMetaResponse(value), null, 2),
       },
     ],
   };
