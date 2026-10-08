@@ -1,0 +1,11 @@
+# Manual Render deployment blueprint; does not create a service by itself.
+# Import only into the KZ-owned Render workspace after reviewing settings.
+services:
+  - type: web
+    name: kz-threads-staging-portal
+    runtime: static
+    repo: https://github.com/kamarulzaman894-arch/threads-mcp
+    branch: kz-scheduled-publishing-v1
+    buildCommand: echo "Static KZ Threads OTP staging portal"
+    staticPublishPath: ./staging-portal
+    autoDeployTrigger: "off"
