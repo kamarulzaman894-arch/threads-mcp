@@ -53,7 +53,7 @@ const ACCESS_PREFIX = 'kz:mcp:oauth:access:';
 const REFRESH_PREFIX = 'kz:mcp:oauth:refresh:';
 
 const CLIENT_TTL_SECONDS = 180 * 24 * 60 * 60;
-const TXN_TTL_SECONDS = 10 * 60;
+const TXN_TTL_SECONDS = 30 * 60;
 const CODE_TTL_SECONDS = 5 * 60;
 const ACCESS_TTL_SECONDS = 60 * 60;
 const REFRESH_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -270,6 +270,10 @@ export class McpOAuthServer {
       return sendHtml(res, 400, '<h1>Invalid authorization request.</h1>');
     }
 
+    if (!this.ownerKeyHash || !/^[a-f0-9]{64}$/i.test(this.ownerKeyHash)) {
+      return sendHtml(res, 503, '<h1>Owner verification is not configured.</h1>');
+    }
+
     const txnId = randomToken();
     const txn: OAuthTxn = {
       clientId,
@@ -290,9 +294,6 @@ export class McpOAuthServer {
       return sendHtml(res, 503, '<h1>Authorization storage failed.</h1>');
     }
 
-    if (!this.ownerKeyHash || !/^[a-f0-9]{64}$/i.test(this.ownerKeyHash)) {
-      return sendHtml(res, 503, '<h1>Owner verification is not configured.</h1>');
-    }
     const clientName = escapeHtml(client.clientName || 'ChatGPT');
     sendHtml(
       res,
