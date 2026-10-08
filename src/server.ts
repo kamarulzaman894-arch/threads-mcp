@@ -601,7 +601,7 @@ export class ThreadsMCPServer {
               until: params.until,
             }));
           }
-          case 'threads_get_thread': {          case 'threads_get_thread': {
+          case 'threads_get_thread': {
             const params = GetThreadSchema.parse(args);
             return textResult(await this.client.getThread(params.threadId, params.fields));
           }
@@ -690,7 +690,7 @@ export class ThreadsMCPServer {
             const params = QuoteThreadSchema.parse(args);
             return textResult(await this.client.quoteThread(params, params.approval));
           }
-          case 'threads_create_thread': {          case 'threads_create_thread': {
+          case 'threads_create_thread': {
             const params = CreateThreadSchema.parse(args);
             const { approval, ...threadParams } = params;
             return textResult(await this.client.createThread(threadParams, approval));
