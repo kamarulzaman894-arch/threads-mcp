@@ -1,7 +1,8 @@
-<!doctype html><html lang="ms"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>KZ Threads Staging</title><style>body{font:16px system-ui;background:#121822;color:#fff;max-width:660px;margin:4rem auto;padding:0 20px}input,textarea,button{font:inherit;padding:12px;margin:8px 0;box-sizing:border-box;width:100%;border-radius:8px}button{background:#60a5fa;color:#071322;border:0;font-weight:700}input,textarea{border:1px solid #475569;background:#1f2937;color:#fff}section{border:1px solid #475569;border-radius:12px;padding:18px;margin:16px 0}.muted{color:#a8b2c6}#ops{display:none}pre{white-space:pre-wrap;overflow-wrap:anywhere}label{display:block}</style></head><body><h1>KZ Threads Staging</h1><p class="muted">Owner-only approval. Production read-only. Auto publish OFF.</p><section id="login"><h2>Email OTP</h2><label>Email<input id="email" type="email" placeholder="Email owner" autocomplete="email"></label><button id="send">Hantar OTP</button><label>Kod OTP<input id="otp" inputmode="numeric" autocomplete="one-time-code" placeholder="Masukkan kod dari email"></label><button id="verify">Sahkan OTP & Aktifkan Owner</button></section><section id="ops"><h2>Draft & Schedule (Staging)</h2><label>Text post<textarea id="text" rows="5" maxlength="500"></textarea></label><button id="draft">Simpan Draft Baharu</button><button id="revise">Simpan Perubahan Draft</button><button id="list">Senarai Post / Refresh</button><hr><p>Untuk post yang telah dibuat, masukkan ID dan revision terkini.</p><label>Post ID<input id="postId" placeholder="UUID"></label><label>Revision<input id="rev" type="number" min="1" value="1"></label><button id="approve">Approve sebagai KZ</button><label>Masa jadual (zon masa peranti; semak waktu sebelum sahkan)<input id="when" type="datetime-local"></label><button id="schedule">Schedule (staging only)</button><button id="cancel">Cancel</button><button id="logout">Log keluar</button></section><section><strong>Status</strong><pre id="status">Belum login. Tiada fungsi publish.</pre></section><script type="module">
+<!doctype html><html lang="ms"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>KZ Threads Staging</title><style>body{font:16px system-ui;background:#121822;color:#fff;max-width:660px;margin:4rem auto;padding:0 20px}input,textarea,button{font:inherit;padding:12px;margin:8px 0;box-sizing:border-box;width:100%;border-radius:8px}button{background:#60a5fa;color:#071322;border:0;font-weight:700}input,textarea{border:1px solid #475569;background:#1f2937;color:#fff}section{border:1px solid #475569;border-radius:12px;padding:18px;margin:16px 0}.muted{color:#a8b2c6}#ops{display:none}pre{white-space:pre-wrap;overflow-wrap:anywhere}label{display:block}</style></head><body><h1>KZ Threads Staging</h1><p class="muted">Owner-only approval. Production read-only. Auto publish OFF.</p><section id="login"><h2>Login Magic Link</h2><label>Email<input id="email" type="email" placeholder="Email owner" autocomplete="email"></label><button id="send">Hantar Magic Link</button><p class="muted">Buka link dalam email menggunakan browser Chrome yang sama. Link sah untuk satu kali login. Jika berpindah ke alamat localhost, tetapan Redirect URL Supabase perlu dikemas kini.</p></section><section id="ops"><h2>Draft & Schedule (Staging)</h2><label>Text post<textarea id="text" rows="5" maxlength="500"></textarea></label><button id="draft">Simpan Draft Baharu</button><button id="revise">Simpan Perubahan Draft</button><button id="list">Senarai Post / Refresh</button><hr><p>Untuk post yang telah dibuat, masukkan ID dan revision terkini.</p><label>Post ID<input id="postId" placeholder="UUID"></label><label>Revision<input id="rev" type="number" min="1" value="1"></label><button id="approve">Approve sebagai KZ</button><label>Masa jadual (zon masa peranti; semak waktu sebelum sahkan)<input id="when" type="datetime-local"></label><button id="schedule">Schedule (staging only)</button><button id="cancel">Cancel</button><button id="logout">Log keluar</button></section><section><strong>Status</strong><pre id="status">Belum login. Tiada fungsi publish.</pre></section><script type="module">
 const base='https://nzusiegirpcduqcxtilh.supabase.co';
 const key="sb_publishable_6L8xT9dJbCwCzrBiPNocmA_RfYo1vL5";
 let accessToken=null;
+const portalRedirect='https://threads-mcp-ho3v.onrender.com/';
 const $=id=>document.getElementById(id);
 function msg(value){$('status').textContent=typeof value==='string'?value:JSON.stringify(value,null,2)}
 async function api(path,method,body,token){
@@ -15,20 +16,46 @@ async function api(path,method,body,token){
 async function doAction(fn){try{await fn()}catch(e){msg('Error: '+e.message)}}
 $('send').onclick=()=>doAction(async()=>{
  const email=$('email').value.trim().toLowerCase();
- if(!email.includes('@'))throw Error('Sila masukkan email yang sah');
- await api('/auth/v1/otp','POST',{email,create_user:true});
- msg('OTP diminta. Semak email. Jika menerima magic link dan bukannya kod, OTP email template perlu dikonfigurasi dalam Supabase.');
+ if(!email.includes('@'))throw Error('Sila masukkan alamat email yang sah.');
+ $('send').disabled=true;
+ try{
+   await api('/auth/v1/otp','POST',{email,create_user:true,redirect_to:portalRedirect});
+   msg('Magic Link telah diminta. Buka email TERBARU dan klik link dalam Chrome. Jika link membawa ke localhost:3000, benarkan URL portal dalam Supabase Authentication > URL Configuration.');
+ }finally{$('send').disabled=false;}
 });
-$('verify').onclick=()=>doAction(async()=>{
- const email=$('email').value.trim().toLowerCase();
- const otp=$('otp').value.trim();
- if(!/^\d{6,8}$/.test(otp))throw Error('Masukkan kod OTP yang sah');
- const response=await api('/auth/v1/verify','POST',{email,token:otp,type:'email'});
- const token=response?.access_token;if(!token)throw Error('Tiada sesi login');
- await api('/rest/v1/rpc/kz_threads_owner_enroll','POST',{},token);
- accessToken=token;
- $('ops').style.display='block';msg('Owner disahkan. Staging only. Tiada publishing.');
-});
+async function restoreFromMagicLink(){
+ const fragment=new URLSearchParams(window.location.hash.replace(/^#/,''));
+ const query=new URLSearchParams(window.location.search);
+ if(!fragment.has('access_token')){
+   if(fragment.has('error') || query.has('error')){
+     window.history.replaceState(null,'',window.location.pathname);
+     msg('Magic Link tidak sah atau telah tamat tempoh. Minta link baharu.');
+   }
+   return;
+ }
+ // Remove bearer credentials from the visible URL immediately.
+ const token=fragment.get('access_token');
+ window.history.replaceState(null,'',window.location.pathname);
+ if(!token || fragment.get('token_type')?.toLowerCase()!=='bearer'){
+   msg('Token Magic Link tidak sah. Sila cuba link baharu.');
+   return;
+ }
+ msg('Sedang menyemak sesi Magic Link...');
+ try{
+   const user=await api('/auth/v1/user','GET',undefined,token);
+   if(!user?.id || !user?.email)throw Error('INVALID_SIGN_IN_SESSION');
+   const enrolled=await api('/rest/v1/rpc/kz_threads_owner_enroll','POST',{},token);
+   if(!enrolled?.enrolled)throw Error('OWNER_ENROLLMENT_FAILED');
+   accessToken=token;
+   $('login').style.display='none';
+   $('ops').style.display='block';
+   msg('Login Magic Link dan pengesahan owner berjaya. STAGING SAHAJA; publishing OFF.');
+ }catch(_err){
+   accessToken=null;
+   msg('Link dibuka, tetapi pengesahan owner gagal. Pastikan email yang sama telah didaftarkan dan link belum tamat tempoh.');
+ }
+}
+void restoreFromMagicLink();
 async function ownerRpc(name,data){if(!accessToken)throw Error('Sila login dahulu');return api('/rest/v1/rpc/'+name,'POST',data,accessToken)}
 async function currentPost() {
   const id=$('postId').value.trim(), rev=Number($('rev').value);
@@ -65,5 +92,5 @@ async function change(action){
 $('approve').onclick=()=>doAction(()=>change('APPROVE'));
 $('schedule').onclick=()=>doAction(()=>change('SCHEDULE'));
 $('cancel').onclick=()=>doAction(()=>change('CANCEL'));
-$('logout').onclick=()=>{accessToken=null;$('ops').style.display='none';msg('Logged out')};
+$('logout').onclick=()=>{accessToken=null;$('ops').style.display='none';$('login').style.display='block';msg('Logged out. Login semula menggunakan Magic Link baharu.');};
 </script></body></html>
