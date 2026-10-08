@@ -240,7 +240,7 @@ export class ThreadsClient {
     const response = await this.client.get('/profile_lookup', {
       params: {
         username,
-        ...(params?.fields && { fields: params.fields.join(',') }),
+        fields: (params?.fields ?? ['username','name','threads_biography','threads_profile_picture_url']).join(','),
       },
     });
     return response.data;
