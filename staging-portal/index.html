@@ -74,7 +74,7 @@ async function change(action){
   const localText=$('text').value.trim();
   if(action==='APPROVE'){
     if(post.status!=='DRAFT')throw Error('Status DRAFT diperlukan.');
-    if(localText!==post.text_content)throw Error('Text dalam editor tidak sama dengan draft tersimpan. Klik Simpan Perubahan Draft dahulu.');
+    if(localText!==post.text_content.trim())throw Error('Text dalam editor tidak sama dengan draft tersimpan. Klik Simpan Perubahan Draft dahulu.');
     if(!confirm('LULUSKAN versi '+post.revision+' ini?\\n\\n'+post.text_content))return;
   }
   let when={};
