@@ -125,6 +125,11 @@ export interface CreateThreadParams {
   imageUrl?: string;
   videoUrl?: string;
   replyToId?: string;
+  topicTag?: string;
+  linkAttachment?: string;
+  pollOptions?: string[];
+  altText?: string;
+  enableReplyApprovals?: boolean;
   replyControl?:
     | 'everyone'
     | 'accounts_you_follow'
@@ -166,4 +171,20 @@ export interface SearchLocationsParams {
 
 export interface ProfileLookupParams {
   fields?: string[];
+}
+
+export interface ProfileCommentsParams {
+  limit?: number;
+  since?: number;
+  until?: number;
+  includeOwn?: boolean;
+  depth?: 'top' | 'all';
+  after?: string;
+}
+
+export interface PendingRepliesParams {
+  threadId: string;
+  fields?: string[];
+  limit?: number;
+  after?: string;
 }
