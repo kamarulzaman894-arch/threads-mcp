@@ -116,4 +116,43 @@ describe('V2 read-only tools', () => {
     const second:any=await c.getProfileComments({limit:1,depth:'all',includeOwn:true,after:first.meta.next});
     expect(second.data.map((item:any)=>item.id)).toEqual(['c2']);
   });
+
+  it('resumes the eleventh post after a bounded ten-post sweep without losing its reply', async () => {
+    const firstPage = Array.from({length:10}, (_,i)=>({id:'p'+(i+1)}));
+    get.mockImplementation(async (path:string, options:any) => {
+      if (path === '/owner123/threads' && !options.params.after) return {
+        data:{data:firstPage,paging:{next:'next-posts',cursors:{after:'posts-cursor'}}}
+      };
+      if (path === '/owner123/threads' && options.params.after === 'posts-cursor')
+        return {data:{data:[{id:'p11'}]}};
+      if (path.startsWith('/p') && path.endsWith('/replies')) {
+        return {data:{data: path === '/p11/replies'
+          ? [{id:'customer11',username:'customer',timestamp:'2026-10-09T01:00:00Z'}] : []}};
+      }
+      throw Error('Unexpected path '+path);
+    });
+    const c = clientFactory();
+    const first:any = await c.getProfileComments({limit:20,includeOwn:true});
+    expect(first.meta.scanned_posts).toBe(10);
+    expect(first.data).toHaveLength(0);
+    expect(first.meta.truncated).toBe(true);
+    const next:any = await c.getProfileComments({limit:20,includeOwn:true,after:first.meta.next});
+    expect(next.meta.scanned_posts).toBe(1);
+    expect(next.data.map((r:any)=>r.id)).toEqual(['customer11']);
+    expect(next.meta.next).toBeNull();
+    expect(post).not.toHaveBeenCalled();
+  });
+  it('rejects attempts to reuse a cursor for another conversation depth', async () => {
+    get.mockImplementation(async (path:string) => {
+      if (path === '/owner123/threads') return {data:{data:[{id:'p1'},{id:'p2'}]}};
+      if (path === '/p1/replies') return {data:{data:[{id:'r1',username:'customer',timestamp:'2026-10-09T01:00:00Z'}]}};
+      if (path === '/p2/replies') return {data:{data:[]}};
+      throw Error(path);
+    });
+    const c=clientFactory();
+    const first:any=await c.getProfileComments({limit:1,includeOwn:true});
+    expect(first.meta.next).toBeTruthy();
+    await expect(c.getProfileComments({limit:1,includeOwn:true,depth:'all',after:first.meta.next}))
+      .rejects.toThrow('Invalid comments cursor');
+  });
 });
