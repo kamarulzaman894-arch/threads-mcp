@@ -12,6 +12,8 @@ import {
   GetMediaParams,
   GetInsightsParams,
   GetRepliesParams,
+  ProfileCommentsParams,
+  PendingRepliesParams,
   SearchThreadsParams,
   SearchLocationsParams,
   ProfileLookupParams,
@@ -307,6 +309,98 @@ export class ThreadsClient {
       },
     });
     return response.data;
+  }
+
+
+  /** Bounded, owned-account read; one post page of at most 10 posts per call. */
+  async getProfileComments(params: ProfileCommentsParams = {}): Promise<unknown> {
+    const limit = params.limit ?? 50;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error('limit must be 1..100');
+    if (params.since !== undefined && params.until !== undefined && params.since > params.until)
+      throw new Error('since must not exceed until');
+    const scope = {
+      since: params.since ?? null, until: params.until ?? null,
+      depth: params.depth ?? 'top', includeOwn: params.includeOwn ?? false
+    };
+    type Position = { postsAfter?: string; postIndex: number; replyAfter?: string };
+    let position: Position = { postIndex: 0 };
+    if (params.after) {
+      try {
+        if (params.after.length > 4096) throw Error('too long');
+        const parsed = JSON.parse(Buffer.from(params.after,'base64url').toString('utf8'));
+        if (parsed.v !== 1 || !Number.isInteger(parsed.postIndex) ||
+          parsed.postIndex < 0 || parsed.postIndex > 9 ||
+          (parsed.postsAfter !== undefined && typeof parsed.postsAfter !== 'string') ||
+          (parsed.replyAfter !== undefined && typeof parsed.replyAfter !== 'string') ||
+          JSON.stringify(parsed.scope) !== JSON.stringify(scope)) throw Error('invalid');
+        position = parsed;
+      } catch { throw Error('Invalid comments cursor'); }
+    }
+    const encode = (p:Position) => Buffer.from(JSON.stringify({v:1,scope,...p}),'utf8').toString('base64url');
+    const own = params.includeOwn ? null : await this.getProfile(['id','username']);
+    const page = await this.client.get('/'+this.config.userId+'/threads', {
+      params: {fields:'id,permalink',limit:10,...(position.postsAfter?{after:position.postsAfter}:{})}
+    });
+    const posts = (page.data?.data || []) as Array<{id:string;permalink?:string}>;
+    if (position.postIndex >= posts.length && posts.length > 0)
+      throw Error('Post paging cursor changed; restart scan');
+    const data:Array<Record<string,unknown>>=[];
+    let next:string|null=null;
+    let scanned=0;
+    for(let i=position.postIndex;i<posts.length;i++){
+      const post=posts[i];
+      if(!post?.id)continue;
+      scanned++;
+      const remaining=limit-data.length;
+      const requestLimit=Math.min(25,Math.max(1,remaining));
+      const reply=await this.client.get('/'+post.id+'/'+(scope.depth==='all'?'conversation':'replies'),{
+        params:{
+          fields:'id,text,username,timestamp,permalink,is_reply_owned_by_me',
+          limit:requestLimit,
+          ...(i===position.postIndex&&position.replyAfter?{after:position.replyAfter}:{})
+        }
+      });
+      const items=(reply.data?.data||[]) as Array<Record<string,unknown>>;
+      if(items.length>requestLimit)throw Error('Meta exceeded requested reply page size');
+      for(const item of items){
+        if(item.id===post.id || (!scope.includeOwn &&
+          (item.is_reply_owned_by_me===true ||
+          (typeof item.username==='string' && item.username.toLowerCase()===own?.username.toLowerCase()))))continue;
+        const stamp=typeof item.timestamp==='string'?Date.parse(item.timestamp)/1000:NaN;
+        if(params.since!==undefined && !(stamp>=params.since))continue;
+        if(params.until!==undefined && !(stamp<=params.until))continue;
+        data.push({...item,post:{id:post.id,permalink:post.permalink}});
+      }
+      if(reply.data?.paging?.next){
+        const after=reply.data?.paging?.cursors?.after;
+        if(!after)throw Error('Meta reply page has no cursor');
+        next=encode({postsAfter:position.postsAfter,postIndex:i,replyAfter:after});
+        break;
+      }
+      if(data.length>=limit){
+        if(i+1<posts.length)next=encode({postsAfter:position.postsAfter,postIndex:i+1});
+        break;
+      }
+    }
+    if(!next && page.data?.paging?.next){
+      const after=page.data?.paging?.cursors?.after;
+      if(!after)throw Error('Meta post page has no cursor');
+      next=encode({postsAfter:after,postIndex:0});
+    }
+    return {data:sanitizeMetaResponse(data),meta:{next,truncated:!!next,scanned_posts:scanned,returned:data.length}};
+  }
+
+  /** Returns only a single owned post's pending reply queue. */
+  async getPendingReplies(params: PendingRepliesParams):Promise<unknown>{
+    const result=await this.client.get('/'+params.threadId+'/pending_replies',{
+      params:{
+        fields:(params.fields||['id','text','username','timestamp','permalink']).join(','),
+        approval_status:'pending',
+        ...(params.limit!==undefined?{limit:params.limit}:{}),
+        ...(params.after?{after:params.after}:{})
+      }
+    });
+    return sanitizeMetaResponse(result.data);
   }
 
   private async publishThread(params: CreateThreadParams): Promise<CreateThreadResponse> {
