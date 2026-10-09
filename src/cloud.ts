@@ -565,7 +565,7 @@ async function runRemoteMcpSelfTest(): Promise<void> {
   };
   const toolNames = toolsPayload.result?.tools?.map((tool) => tool.name) ?? [];
 
-  if (toolNames.length !== (actionApprovals ? 26 : 16) ||
+  if (toolNames.length !== (actionApprovals ? 28 : 18) ||
       (actionApprovals
         ? !['threads_create_thread', 'threads_reply_to_thread', 'threads_delete_thread'].every(name => toolNames.includes(name))
         : ['threads_create_thread', 'threads_reply_to_thread', 'threads_repost_thread', 'threads_delete_thread'].some(name => toolNames.includes(name)))) {
@@ -615,7 +615,7 @@ async function runRemoteMcpSelfTest(): Promise<void> {
   });
 
   console.error(
-    'Remote MCP self-test: PASS (401 guard, initialize, ' + (actionApprovals ? '26 owner-gated tools' : '16 read-only tools') + ', profile read)'
+    'Remote MCP self-test: PASS (401 guard, initialize, ' + (actionApprovals ? '28 owner-gated tools' : '18 read-only tools') + ', profile read)'
   );
 }
 
