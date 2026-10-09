@@ -1,5 +1,6 @@
 import { KZActionApprovals } from './authority/action-approvals.js';
 import { executionOnlyWriteValidator } from './authority/write-execution-scope.js';
+import { validOauthOwnerKey, sameConnectedThreadsAccount } from './authority/oauth-owner-gate.js';
 import * as http from 'http';
 import { URL } from 'url';
 import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
@@ -836,21 +837,29 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
-  if (req.method === 'GET' && url.pathname === '/oauth/start') {
-    if (!oauthConfigured()) {
-      return sendJson(res, 503, {
-        error: 'OAUTH_NOT_CONFIGURED',
-        message: 'Set THREADS_APP_ID and THREADS_APP_SECRET in Render environment variables.',
-        redirectUri: redirectUri || null,
-      });
+  if (url.pathname === '/oauth/start' && req.method === 'GET') {
+    return sendHtml(res, 200,
+      '<!doctype html><html><head><meta charset="utf-8"><title>KZ Threads Reauthorization</title></head>' +
+      '<body style="font-family:system-ui;max-width:720px;margin:36px auto;padding:18px">' +
+      '<h1>KZ Threads — Reconnect Owner Verification</h1>' +
+      '<p>Only KZ can initiate a Threads reauthorization. Existing tokens remain active until a new grant has been verified and stored.</p>' +
+      '<form action="/oauth/start" method="post"><label>Owner secret <input type="password" name="owner_key" autocomplete="off" required></label>' +
+      '<p><button type="submit">Verify KZ &amp; continue to Meta</button></p></form></body></html>');
+  }
+  if (url.pathname === '/oauth/start' && req.method === 'POST') {
+    if (!oauthConfigured()) return sendJson(res, 503, { error: 'OAUTH_NOT_CONFIGURED' });
+    let body = '';
+    for await (const chunk of req) {
+      body += chunk.toString();
+      if (body.length > 8192) return sendHtml(res, 413, '<h1>Request too large</h1>');
     }
-
+    const form = new URLSearchParams(body);
+    if (!validOauthOwnerKey(form.get('owner_key') || '', ownerHash)) {
+      return sendHtml(res, 403, '<h1>Owner verification failed</h1>');
+    }
     const state = createSignedState();
     const authUrl = getOAuth().getAuthorizationUrl(scopes, state);
-    res.writeHead(302, {
-      Location: authUrl,
-      'Cache-Control': 'no-store',
-    });
+    res.writeHead(303, { Location: authUrl, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
     return res.end();
   }
 
@@ -896,21 +905,23 @@ const server = http.createServer(async (req, res) => {
 
       const result = await exchange;
 
+      if (!sameConnectedThreadsAccount(authState.userId, result.userId)) {
+        inFlightStates.delete(state);
+        return sendHtml(res, 403, '<h1>Wrong Threads account</h1><p>Reauthorization cannot switch the connected account.</p>');
+      }
+      const nextExpiresAt = Date.now() + result.expiresIn * 1000;
+      // Fail closed: never replace a working token if the secure token store fails.
+      const saved = await saveToken({
+        accessToken: result.accessToken,
+        userId: result.userId,
+        expiresAt: nextExpiresAt,
+      });
+      if (!saved) throw new Error('SECURE_TOKEN_STORE_UNAVAILABLE');
       activeAccessToken = result.accessToken;
       authState.authenticated = true;
       authState.userId = result.userId;
-      authState.expiresAt = Date.now() + result.expiresIn * 1000;
-
-      try {
-        authState.persistent = await saveToken({
-          accessToken: result.accessToken,
-          userId: result.userId,
-          expiresAt: authState.expiresAt,
-        });
-      } catch (error) {
-        authState.persistent = false;
-        console.error('Persistent token save failed:', checkDetail(error));
-      }
+      authState.expiresAt = nextExpiresAt;
+      authState.persistent = true;
 
       authState.smoke = await runReadSmoke(result.accessToken, result.userId);
       completedStates.add(state);
