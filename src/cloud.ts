@@ -785,7 +785,7 @@ const server = http.createServer(async (req, res) => {
       '<h1>KZ Threads — Confirm action</h1>' +
       '<p>Action: <strong>' + escape(item.action) + '</strong></p>' +
       '<p>Account ID: ' + escape(item.userId) + '</p>' +
-      '<p>Expires in 10 minutes from request. No action will run until the ChatGPT call is repeated after approval.</p>' +
+      '<p>Expires in 30 minutes from request. No action will run until the ChatGPT call is repeated after approval.</p>' +
       '<pre style="white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid #ccc;padding:16px">' +
       escape(item.summary) + '</pre>' +
       '<form action="/actions/approve" method="post">' +
