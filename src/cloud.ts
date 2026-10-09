@@ -719,7 +719,7 @@ const server = http.createServer(async (req, res) => {
         transport: 'streamable-http',
         authentication: 'oauth2-or-internal-bearer',
         configured: Boolean(oauthServer && redisUrl),
-        exposedToolCount: actionApprovals ? 26 : 16,
+        exposedToolCount: actionApprovals ? 28 : 18,
         writeExecution: actionApprovals ? 'OWNER_APPROVAL_EACH_ACTION' : 'DISABLED',
       },
     });
@@ -732,7 +732,7 @@ const server = http.createServer(async (req, res) => {
       redirectUri: redirectUri || null,
       authenticated: authState.authenticated,
       remoteMcpConfigured: Boolean(oauthServer && redisUrl),
-      exposedToolCount: actionApprovals ? 26 : 16,
+      exposedToolCount: actionApprovals ? 28 : 18,
       remoteMcpSessions: mcpSessions.size,
     });
   }
