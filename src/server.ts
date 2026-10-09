@@ -1,3 +1,8 @@
+import { WRITE_TOOL_NAMES } from './authority/capabilities.js';
+import { digestWritePayload } from './authority/write-approval.js';
+import { writeExecutionContext } from './authority/write-execution-scope.js';
+import type { KZActionApprovals } from './authority/action-approvals.js';
+import { READ_TOOL_NAMES, TOOL_CAPABILITIES } from './authority/capabilities.js';
 import { sanitizeMetaResponse } from './utils/sanitize-meta-response.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -194,7 +199,7 @@ export class ThreadsMCPServer {
   private server: Server;
   private client: ThreadsClient | null = null;
 
-  constructor(private readonly readOnly = false) {
+  constructor(private readonly readOnly = false, private readonly approvals?: KZActionApprovals) {
     this.server = new Server(
       {
         name: 'kz-threads-mcp-human-controlled',
@@ -556,7 +561,13 @@ export class ThreadsMCPServer {
         },
       ];
 
-      return { tools: this.readOnly ? tools.filter((tool) => tool.description?.startsWith('READ:')) : tools };
+      const advertisedNames = new Set(tools.map((tool) => tool.name));
+      const expectedNames: Set<string> = new Set(TOOL_CAPABILITIES.map((cap) => cap.name));
+      if (advertisedNames.size !== tools.length || expectedNames.size !== tools.length ||
+          tools.some((tool) => !expectedNames.has(tool.name))) {
+        throw new Error('MCP tool registry is inconsistent with the 26-tool capability contract.');
+      }
+      return { tools: this.readOnly && !this.approvals ? tools.filter((tool) => READ_TOOL_NAMES.has(tool.name)) : tools };
     });
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -565,38 +576,39 @@ export class ThreadsMCPServer {
       }
 
       const { name, arguments: args } = request.params;
-      if (this.readOnly && !name.startsWith('threads_get_') && !['threads_search', 'threads_profile_lookup', 'threads_search_locations', 'threads_list_my_replies'].includes(name)) {
+      if (this.readOnly && !this.approvals && !READ_TOOL_NAMES.has(name)) {
         throw new Error('READ_ONLY: write and unknown tools are disabled for remote MCP.');
       }
 
       try {
+        const runTool = async () => {
         switch (name) {
           case 'threads_get_profile': {
             const params = GetProfileSchema.parse(args);
-            return textResult(await this.client.getProfile(params.fields));
+            return textResult(await this.client!.getProfile(params.fields));
           }
           case 'threads_get_threads': {
             const params = GetThreadsSchema.parse(args);
-            return textResult(await this.client.getThreads(params));
+            return textResult(await this.client!.getThreads(params));
           }
           case 'threads_list_my_replies': {
             const params = ListMyRepliesSchema.parse(args);
-            return textResult(await this.client.listMyReplies(params));
+            return textResult(await this.client!.listMyReplies(params));
           }
           case 'threads_get_public_profile_posts': {
             const params = PublicProfilePostsSchema.parse(args);
-            return textResult(await this.client.getPublicProfilePosts(params.username, params));
+            return textResult(await this.client!.getPublicProfilePosts(params.username, params));
           }
           case 'threads_get_publishing_limit': {
-            return textResult(await this.client.getPublishingLimit());
+            return textResult(await this.client!.getPublishingLimit());
           }
           case 'threads_get_container_status': {
             const params = ContainerStatusSchema.parse(args);
-            return textResult(await this.client.getContainerStatus(params.containerId));
+            return textResult(await this.client!.getContainerStatus(params.containerId));
           }
           case 'threads_get_account_insights': {
             const params = AccountInsightsSchema.parse(args);
-            return textResult(await this.client.getUserInsights({
+            return textResult(await this.client!.getUserInsights({
               metric: params.metrics,
               since: params.since,
               until: params.until,
@@ -604,12 +616,12 @@ export class ThreadsMCPServer {
           }
           case 'threads_get_thread': {
             const params = GetThreadSchema.parse(args);
-            return textResult(await this.client.getThread(params.threadId, params.fields));
+            return textResult(await this.client!.getThread(params.threadId, params.fields));
           }
           case 'threads_search': {
             const params = SearchThreadsSchema.parse(args);
             return textResult(
-              await this.client.searchThreads(params.query, {
+              await this.client!.searchThreads(params.query, {
                 searchType: params.searchType,
                 fields: params.fields,
                 limit: params.limit,
@@ -620,18 +632,18 @@ export class ThreadsMCPServer {
           }
           case 'threads_get_mentions': {
             const params = GetMentionsSchema.parse(args);
-            return textResult(await this.client.getMentions(params));
+            return textResult(await this.client!.getMentions(params));
           }
           case 'threads_profile_lookup': {
             const params = ProfileLookupSchema.parse(args);
             return textResult(
-              await this.client.profileLookup(params.username, { fields: params.fields })
+              await this.client!.profileLookup(params.username, { fields: params.fields })
             );
           }
           case 'threads_search_locations': {
             const params = SearchLocationsSchema.parse(args);
             return textResult(
-              await this.client.searchLocations(params.query, {
+              await this.client!.searchLocations(params.query, {
                 fields: params.fields,
                 latitude: params.latitude,
                 longitude: params.longitude,
@@ -640,17 +652,17 @@ export class ThreadsMCPServer {
           }
           case 'threads_get_location': {
             const params = GetLocationSchema.parse(args);
-            return textResult(await this.client.getLocation(params.locationId, params.fields));
+            return textResult(await this.client!.getLocation(params.locationId, params.fields));
           }
           case 'threads_get_insights': {
             const params = GetInsightsSchema.parse(args);
             const insights = params.threadId
-              ? await this.client.getThreadInsights(params.threadId, {
+              ? await this.client!.getThreadInsights(params.threadId, {
                   metric: params.metrics,
                   since: params.since,
                   until: params.until,
                 })
-              : await this.client.getUserInsights({
+              : await this.client!.getUserInsights({
                   metric: params.metrics,
                   since: params.since,
                   until: params.until,
@@ -660,7 +672,7 @@ export class ThreadsMCPServer {
           case 'threads_get_replies': {
             const params = GetRepliesSchema.parse(args);
             return textResult(
-              await this.client.getReplies(params.threadId, {
+              await this.client!.getReplies(params.threadId, {
                 fields: params.fields,
                 reverse: params.reverse,
               })
@@ -669,7 +681,7 @@ export class ThreadsMCPServer {
           case 'threads_get_conversation': {
             const params = GetConversationSchema.parse(args);
             return textResult(
-              await this.client.getConversation(params.threadId, {
+              await this.client!.getConversation(params.threadId, {
                 fields: params.fields,
                 reverse: params.reverse,
               })
@@ -677,29 +689,29 @@ export class ThreadsMCPServer {
           }
           case 'threads_create_video_container': {
             const params = VideoContainerSchema.parse(args);
-            return textResult(await this.client.createVideoContainer(params, params.approval));
+            return textResult(await this.client!.createVideoContainer(params, params.approval));
           }
           case 'threads_create_carousel_post': {
             const params = CarouselContainerSchema.parse(args);
-            return textResult(await this.client.createCarouselContainer(params, params.approval));
+            return textResult(await this.client!.createCarouselContainer(params, params.approval));
           }
           case 'threads_publish_container': {
             const params = PublishContainerSchema.parse(args);
-            return textResult(await this.client.publishContainer(params.containerId, params.approval));
+            return textResult(await this.client!.publishContainer(params.containerId, params.approval));
           }
           case 'threads_quote_thread': {
             const params = QuoteThreadSchema.parse(args);
-            return textResult(await this.client.quoteThread(params, params.approval));
+            return textResult(await this.client!.quoteThread(params, params.approval));
           }
           case 'threads_create_thread': {
             const params = CreateThreadSchema.parse(args);
             const { approval, ...threadParams } = params;
-            return textResult(await this.client.createThread(threadParams, approval));
+            return textResult(await this.client!.createThread(threadParams, approval));
           }
           case 'threads_reply_to_thread': {
             const params = ReplyToThreadSchema.parse(args);
             return textResult(
-              await this.client.replyToThread(
+              await this.client!.replyToThread(
                 params.threadId,
                 params.text,
                 params.approval,
@@ -709,22 +721,22 @@ export class ThreadsMCPServer {
           }
           case 'threads_repost_thread': {
             const params = RepostThreadSchema.parse(args);
-            return textResult(await this.client.repostThread(params.threadId, params.approval));
+            return textResult(await this.client!.repostThread(params.threadId, params.approval));
           }
           case 'threads_delete_thread': {
             const params = DeleteThreadSchema.parse(args);
-            return textResult(await this.client.deleteThread(params.threadId, params.approval));
+            return textResult(await this.client!.deleteThread(params.threadId, params.approval));
           }
           case 'threads_manage_reply': {
             const params = ManageReplySchema.parse(args);
             return textResult(
-              await this.client.manageReply(params.replyId, params.hide, params.approval)
+              await this.client!.manageReply(params.replyId, params.hide, params.approval)
             );
           }
           case 'threads_manage_pending_reply': {
             const params = ManagePendingReplySchema.parse(args);
             return textResult(
-              await this.client.managePendingReply(
+              await this.client!.managePendingReply(
                 params.replyId,
                 params.approve,
                 params.approval
@@ -734,6 +746,28 @@ export class ThreadsMCPServer {
           default:
             throw new Error(`Unknown tool: ${name}`);
         }
+        };
+        if (WRITE_TOOL_NAMES.has(name)) {
+          if (!this.approvals) throw new Error('WRITE_LOCKED: no owner approval service configured.');
+          const parsed = args && typeof args === 'object' && !Array.isArray(args)
+            ? args as Record<string, unknown> : {};
+          const approval = parsed.approval as
+            | { approved?: boolean; approvedBy?: string; approvalRef?: string }
+            | undefined;
+          if (!approval) return textResult(await this.approvals.prepare(name, parsed));
+          if (!approval.approved || approval.approvedBy !== 'KZ' || !approval.approvalRef) {
+            throw new Error('KZ_APPROVAL_REQUIRED');
+          }
+          const payloadDigest = digestWritePayload(name, parsed);
+          const allowed = await this.approvals.validator().validate({
+            action: name,
+            approval: approval as { approved: true; approvedBy: 'KZ'; approvalRef: string },
+            payloadDigest,
+          });
+          if (!allowed) throw new Error('KZ_APPROVAL_INVALID_OR_ALREADY_USED');
+          return await writeExecutionContext.run({ action: name, approvalRef: approval.approvalRef }, runTool);
+        }
+        return await runTool();
       } catch (error) {
         if (error instanceof z.ZodError) {
           throw new Error(`Invalid parameters: ${JSON.stringify(error.errors)}`);
