@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 export interface KZWriteApproval {
   approved: true;
   approvedBy: 'KZ';
@@ -8,6 +9,7 @@ export interface KZWriteApprovalRequest {
   action: string;
   approval: KZWriteApproval;
   targetId?: string;
+  payloadDigest?: string;
 }
 
 export interface KZWriteApprovalValidator {
@@ -44,4 +46,15 @@ export async function assertKZWriteApproval(
       'Threads write blocked: approvalRef was not validated by the host approval authority.'
     );
   }
+}
+
+export function digestWritePayload(action: string, args: unknown): string {
+  const canonical = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === 'object') return Object.fromEntries(
+      Object.entries(value).filter(([key]) => key !== 'approval').sort(([a],[b])=>a.localeCompare(b)).map(([key, item]) => [key, canonical(item)])
+    );
+    return value;
+  };
+  return createHash('sha256').update(JSON.stringify({ action, args: canonical(args) })).digest('hex');
 }
