@@ -164,21 +164,49 @@ export class ThreadsClient {
     return response.data;
   }
 
+  private isPublicDiscoveryScopeRejection(error: unknown): boolean {
+    if (!(error instanceof ThreadsAPIError)) return false;
+    const details = error.response as
+      | { error?: { code?: number; error_subcode?: number } }
+      | undefined;
+    return details?.error?.code === 10 && details.error.error_subcode === 4279067;
+  }
+
+  private async isAuthenticatedOwnerUsername(username: string): Promise<boolean> {
+    const owner = await this.getProfile(['id', 'username']);
+    return owner.username.toLowerCase() === username.trim().replace(/^@/, '').toLowerCase();
+  }
+
   async getPublicProfilePosts(username: string, params?: {
     limit?: number;
     fields?: string[];
     after?: string;
   }): Promise<unknown> {
     const fields = params?.fields ?? ['id', 'text', 'username', 'permalink', 'timestamp', 'media_type'];
-    const response = await this.client.get('/profile_posts', {
-      params: {
-        username,
-        fields: fields.join(','),
-        limit: params?.limit ?? 25,
-        ...(params?.after ? { after: params.after } : {}),
-      },
-    });
-    return response.data;
+    try {
+      const response = await this.client.get('/profile_posts', {
+        params: {
+          username,
+          fields: fields.join(','),
+          limit: params?.limit ?? 25,
+          ...(params?.after ? { after: params.after } : {}),
+        },
+      });
+      return response.data;
+    } catch (error) {
+      if (!this.isPublicDiscoveryScopeRejection(error) ||
+          !(await this.isAuthenticatedOwnerUsername(username))) throw error;
+      // Only the authenticated owner's matching username can use this route.
+      // Preserve the original page shape/cursor and expose data provenance.
+      const response = await this.client.get(`/${this.config.userId}/threads`, {
+        params: {
+          fields: fields.join(','),
+          limit: params?.limit ?? 25,
+          ...(params?.after ? { after: params.after } : {}),
+        },
+      });
+      return { ...response.data, _source: 'authenticated_owner' };
+    }
   }
 
   async getPublishingLimit(): Promise<unknown> {
@@ -237,13 +265,27 @@ export class ThreadsClient {
   }
 
   async profileLookup(username: string, params?: ProfileLookupParams): Promise<unknown> {
-    const response = await this.client.get('/profile_lookup', {
-      params: {
-        username,
-        fields: (params?.fields ?? ['username','name']).join(','),
-      },
-    });
-    return response.data;
+    const fields = params?.fields ?? ['username', 'name'];
+    try {
+      const response = await this.client.get('/profile_lookup', {
+        params: {
+          username,
+          fields: fields.join(','),
+        },
+      });
+      return response.data;
+    } catch (error) {
+      if (!this.isPublicDiscoveryScopeRejection(error) ||
+          !(await this.isAuthenticatedOwnerUsername(username))) throw error;
+      // Never substitute authenticated data for another person's profile.
+      const owner = await this.getProfile([...new Set(['id', 'username', ...fields])]);
+      const data = owner as unknown as Record<string, unknown>;
+      return {
+        ...Object.fromEntries(fields.filter((field) => field in data)
+          .map((field) => [field, data[field]])),
+        _source: 'authenticated_owner',
+      };
+    }
   }
 
   async searchLocations(query: string, params?: SearchLocationsParams): Promise<unknown> {
