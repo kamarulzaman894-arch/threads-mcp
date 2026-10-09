@@ -250,6 +250,14 @@ export class ThreadsClient {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error('limit must be 1..100');
     if (params.since !== undefined && params.until !== undefined && params.since > params.until)
       throw new Error('since must not exceed until');
+    // Cursor is bound to the original filters, so a resumed scan cannot silently
+    // mix top-level replies with nested replies or change date/ownership coverage.
+    const scope = {
+      since: params.since ?? null,
+      until: params.until ?? null,
+      depth: params.depth ?? 'top',
+      includeOwn: params.includeOwn ?? false,
+    };
     let position: { postsAfter?: string; postIndex: number; replyAfter?: string } = { postIndex: 0 };
     if (params.after) {
       try {
@@ -257,18 +265,21 @@ export class ThreadsClient {
         const parsed = JSON.parse(Buffer.from(params.after, 'base64url').toString('utf8'));
         if (parsed.v !== 1 || !Number.isInteger(parsed.postIndex) || parsed.postIndex < 0 || parsed.postIndex > 10 ||
           (parsed.postsAfter !== undefined && typeof parsed.postsAfter !== 'string') ||
-          (parsed.replyAfter !== undefined && typeof parsed.replyAfter !== 'string')) throw new Error('invalid');
+          (parsed.replyAfter !== undefined && typeof parsed.replyAfter !== 'string') ||
+          JSON.stringify(parsed.scope) !== JSON.stringify(scope)) throw new Error('invalid');
         position = parsed;
       } catch { throw new Error('Invalid comments cursor'); }
     }
     const encode = (p: typeof position) =>
-      Buffer.from(JSON.stringify({ v: 1, ...p }), 'utf8').toString('base64url');
+      Buffer.from(JSON.stringify({ v: 1, scope, ...p }), 'utf8').toString('base64url');
     const own = params.includeOwn ? null : await this.getProfile(['id','username']);
     const postRes = await this.client.get('/' + this.config.userId + '/threads', {
       params: { fields: 'id,permalink', limit: 10,
         ...(position.postsAfter ? { after: position.postsAfter } : {}) }
     });
     const posts = (postRes.data?.data || []) as Array<{id:string;permalink?:string}>;
+    if (position.postIndex >= posts.length && posts.length > 0)
+      throw new Error('Cursor no longer points to a post on this Meta page; restart scan');
     const data: Array<Record<string, unknown>> = [];
     let next: string | null = null;
     let scanned = 0;
@@ -282,7 +293,13 @@ export class ThreadsClient {
           limit: Math.min(25, Math.max(1, limit - data.length)),
           ...(i === position.postIndex && position.replyAfter ? { after: position.replyAfter } : {}) }
       });
-      for (const reply of (replyRes.data?.data || []) as Array<Record<string, unknown>>) {
+      // Meta normally honors 'limit'. If a provider returns a larger page,
+      // refuse to silently overrun the requested cap or drop unconsumed records.
+      const replyPage = (replyRes.data?.data || []) as Array<Record<string, unknown>>;
+      const remaining = limit - data.length;
+      if (replyPage.length > Math.min(25, Math.max(1, remaining)))
+        throw new Error('Meta reply page exceeded requested limit; refusing lossy pagination');
+      for (const reply of replyPage) {
         if (reply.id === post.id || (!params.includeOwn && (
           reply.is_reply_owned_by_me === true ||
           (typeof reply.username === 'string' && reply.username.toLowerCase() === own?.username.toLowerCase())
