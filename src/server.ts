@@ -183,6 +183,16 @@ const GetConversationSchema = z.object({
   reverse: z.boolean().optional(),
 });
 
+const ProfileCommentsSchema = z.object({
+  limit:z.number().int().min(1).max(100).optional(),
+  since:z.number().optional(),until:z.number().optional(),
+  includeOwn:z.boolean().optional(),depth:z.enum(['top','all']).optional(),
+  after:z.string().optional()
+});
+const PendingRepliesSchema = z.object({
+  threadId:z.string().min(1),limit:z.number().int().min(1).max(100).optional(),
+  fields:z.array(z.string()).optional(),after:z.string().optional()
+});
 const approvalInput = {
   type: 'object' as const,
   description:
@@ -408,6 +418,12 @@ export class ThreadsMCPServer {
             required: ['threadId'],
           },
         },
+        {name:'threads_get_profile_comments',description:'READ: bounded own-account comments inbox; pagination via meta.next',inputSchema:{
+          type:'object',properties:{limit:{type:'integer',minimum:1,maximum:100},since:{type:'number'},until:{type:'number'},includeOwn:{type:'boolean'},depth:{type:'string',enum:['top','all']},after:{type:'string'}}
+        }},
+        {name:'threads_get_pending_replies',description:'READ: list pending replies on a specific owned post',inputSchema:{
+          type:'object',properties:{threadId:{type:'string'},fields:{type:'array',items:{type:'string'}},limit:{type:'integer',minimum:1,maximum:100},after:{type:'string'}},required:['threadId']
+        }},
         {
           name: 'threads_create_video_container',
           description: 'WRITE: Create an unpublished video container; requires validated KZ approval.',
@@ -565,7 +581,7 @@ export class ThreadsMCPServer {
       const expectedNames: Set<string> = new Set(TOOL_CAPABILITIES.map((cap) => cap.name));
       if (advertisedNames.size !== tools.length || expectedNames.size !== tools.length ||
           tools.some((tool) => !expectedNames.has(tool.name))) {
-        throw new Error('MCP tool registry is inconsistent with the 26-tool capability contract.');
+        throw new Error('MCP tool registry is inconsistent with the 28-tool capability contract.');
       }
       return { tools: this.readOnly && !this.approvals ? tools.filter((tool) => READ_TOOL_NAMES.has(tool.name)) : tools };
     });
@@ -686,6 +702,14 @@ export class ThreadsMCPServer {
                 reverse: params.reverse,
               })
             );
+          }
+          case 'threads_get_profile_comments': {
+            const p=ProfileCommentsSchema.parse(args);
+            return textResult(await this.client!.getProfileComments(p));
+          }
+          case 'threads_get_pending_replies': {
+            const p=PendingRepliesSchema.parse(args);
+            return textResult(await this.client!.getPendingReplies(p));
           }
           case 'threads_create_video_container': {
             const params = VideoContainerSchema.parse(args);
