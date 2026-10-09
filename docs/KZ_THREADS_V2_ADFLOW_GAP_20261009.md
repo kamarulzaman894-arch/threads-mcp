@@ -22,3 +22,11 @@
 7. Check Meta App Review for `threads_profile_discovery` and `threads_keyword_search` separately.
 
 **Release status:** Proposed GitHub changes only. Production/connector activation remains blocked until CI, functional verification, owner review and canonical commit.
+
+
+## Release blocker discovered on 2026-10-09
+This repository currently runs an MCP **stdio** transport from `src/server.ts`, whereas the installed ChatGPT plugin points to a separately hosted **Streamable HTTP** endpoint at `https://kz-threads-mcp.onrender.com/mcp`. A GitHub change here is **not evidence** that the remote service will receive it. Do not merge/deploy or claim canonical production integration without confirmed Render service-to-repository mapping and exact deployment/build verification.
+
+The additional publishing fields introduced in an early draft were removed from TypeScript types because the publishing client never transmitted them to Meta. No new publishing capability is released by this PR.
+
+The pending-replies endpoint and nested conversation behavior require live read-only Meta validation before release; unit tests mock responses and do not establish Meta API availability.
