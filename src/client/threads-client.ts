@@ -371,10 +371,16 @@ export class ThreadsClient {
         if(params.until!==undefined && !(stamp<=params.until))continue;
         data.push({...item,post:{id:post.id,permalink:post.permalink}});
       }
-      if(reply.data?.paging?.next){
-        const after=reply.data?.paging?.cursors?.after;
-        if(!after)throw Error('Meta reply page has no cursor');
-        next=encode({postsAfter:position.postsAfter,postIndex:i,replyAfter:after});
+      // Meta's Threads API can return only paging.cursors, without paging.next.
+      // Treat a non-empty page plus a new cursor as potentially resumable.
+      // A final empty page clears that post and allows the scan to advance.
+      const replyAfter=reply.data?.paging?.cursors?.after;
+      if(reply.data?.paging?.next && !replyAfter)
+        throw Error('Meta reply page advertised next without a cursor');
+      if(items.length>0 && replyAfter){
+        if(replyAfter===position.replyAfter && i===position.postIndex)
+          throw Error('Meta reply cursor did not advance');
+        next=encode({postsAfter:position.postsAfter,postIndex:i,replyAfter});
         break;
       }
       if(data.length>=limit){
@@ -382,10 +388,14 @@ export class ThreadsClient {
         break;
       }
     }
-    if(!next && page.data?.paging?.next){
-      const after=page.data?.paging?.cursors?.after;
-      if(!after)throw Error('Meta post page has no cursor');
-      next=encode({postsAfter:after,postIndex:0});
+    // Threads media pages likewise may expose cursors without a next URL.
+    // An extra empty continuation page is preferable to silently missing posts.
+    const postsAfter=page.data?.paging?.cursors?.after;
+    if(!next && page.data?.paging?.next && !postsAfter)
+      throw Error('Meta post page advertised next without a cursor');
+    if(!next && posts.length>0 && postsAfter){
+      if(postsAfter===position.postsAfter) throw Error('Meta post cursor did not advance');
+      next=encode({postsAfter,postIndex:0});
     }
     return {data:sanitizeMetaResponse(data),meta:{next,truncated:!!next,scanned_posts:scanned,returned:data.length}};
   }
