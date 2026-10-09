@@ -125,6 +125,34 @@ describe('ThreadsClient', () => {
     });
   });
 
+  describe('owner-only discovery fallback', () => {
+    const permissionError = () => new ThreadsAPIError('Permission denied', 403, {
+      error: { code: 10, error_subcode: 4279067 },
+    });
+    it('returns authenticated owner profile for exact matching username', async () => {
+      mockAxiosInstance.get.mockRejectedValueOnce(permissionError())
+        .mockResolvedValueOnce({ data: { id: 'test-user-id', username: 'kzbinzainal' } })
+        .mockResolvedValueOnce({ data: { id: 'test-user-id', username: 'kzbinzainal', name: 'KZ' } });
+      const result = await client.profileLookup('kzbinzainal');
+      expect(result).toEqual({ username: 'kzbinzainal', name: 'KZ', _source: 'authenticated_owner' });
+    });
+    it('never falls back to owner data for a different username', async () => {
+      mockAxiosInstance.get.mockRejectedValueOnce(permissionError())
+        .mockResolvedValueOnce({ data: { id: 'test-user-id', username: 'kzbinzainal' } });
+      await expect(client.profileLookup('someoneelse')).rejects.toThrow();
+      expect(mockAxiosInstance.get).toHaveBeenCalledTimes(2);
+    });
+    it('routes matching owner's public posts read to authenticated endpoint', async () => {
+      mockAxiosInstance.get.mockRejectedValueOnce(permissionError())
+        .mockResolvedValueOnce({ data: { id: 'test-user-id', username: 'kzbinzainal' } })
+        .mockResolvedValueOnce({ data: { data: [{ id: 'post1' }], paging: { cursors: { after: 'next' } } } });
+      const result = await client.getPublicProfilePosts('kzbinzainal', { limit: 2, after: 'page1' });
+      expect(result).toEqual({ data: [{ id: 'post1' }], paging: { cursors: { after: 'next' } }, _source: 'authenticated_owner' });
+      expect(mockAxiosInstance.get).toHaveBeenLastCalledWith('/test-user-id/threads',
+        { params: { fields: 'id,text,username,permalink,timestamp,media_type', limit: 2, after: 'page1' } });
+    });
+  });
+
   describe('getThreads', () => {
     it('should fetch user threads with default parameters', async () => {
       const mockThreads = {
