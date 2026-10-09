@@ -11,6 +11,8 @@ import {
   GetMediaParams,
   GetInsightsParams,
   GetRepliesParams,
+  ProfileCommentsParams,
+  PendingRepliesParams,
   SearchThreadsParams,
   SearchLocationsParams,
   ProfileLookupParams,
@@ -220,6 +222,96 @@ export class ThreadsClient {
       params: {
         ...(fields && { fields: fields.join(',') }),
       },
+    });
+    return response.data;
+  }
+
+
+  /** Read pending replies for a specific owned post. Read only. */
+  async getPendingReplies(params: PendingRepliesParams): Promise<unknown> {
+    const response = await this.client.get('/' + params.threadId + '/pending_replies', {
+      params: {
+        fields: (params.fields || ['id','text','username','timestamp','permalink']).join(','),
+        ...(params.limit !== undefined ? { limit: params.limit } : {}),
+        ...(params.after ? { after: params.after } : {})
+      }
+    });
+    return response.data;
+  }
+
+  /**
+   * Bounded inbox scan for owned posts. Unlike AdFlow's aggregated endpoint,
+   * this calls Meta once per post plus pagination, with a maximum of ten posts
+   * per sweep. The response clearly indicates if more posts remain.
+   */
+  async getProfileComments(params: ProfileCommentsParams = {}): Promise<unknown> {
+    const limit = params.limit ?? 50;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error('limit must be 1..100');
+    if (params.since !== undefined && params.until !== undefined && params.since > params.until)
+      throw new Error('since must not exceed until');
+    let position: { postsAfter?: string; postIndex: number; replyAfter?: string } = { postIndex: 0 };
+    if (params.after) {
+      try {
+        if (params.after.length > 4096) throw new Error('too long');
+        const parsed = JSON.parse(Buffer.from(params.after, 'base64url').toString('utf8'));
+        if (parsed.v !== 1 || !Number.isInteger(parsed.postIndex) || parsed.postIndex < 0 || parsed.postIndex > 10 ||
+          (parsed.postsAfter !== undefined && typeof parsed.postsAfter !== 'string') ||
+          (parsed.replyAfter !== undefined && typeof parsed.replyAfter !== 'string')) throw new Error('invalid');
+        position = parsed;
+      } catch { throw new Error('Invalid comments cursor'); }
+    }
+    const encode = (p: typeof position) =>
+      Buffer.from(JSON.stringify({ v: 1, ...p }), 'utf8').toString('base64url');
+    const own = params.includeOwn ? null : await this.getProfile(['id','username']);
+    const postRes = await this.client.get('/' + this.config.userId + '/threads', {
+      params: { fields: 'id,permalink', limit: 10,
+        ...(position.postsAfter ? { after: position.postsAfter } : {}) }
+    });
+    const posts = (postRes.data?.data || []) as Array<{id:string;permalink?:string}>;
+    const data: Array<Record<string, unknown>> = [];
+    let next: string | null = null;
+    let scanned = 0;
+    for (let i = position.postIndex; i < posts.length; i++) {
+      const post = posts[i];
+      if (!post?.id) continue;
+      scanned++;
+      const path = params.depth === 'all' ? 'conversation' : 'replies';
+      const replyRes = await this.client.get('/' + post.id + '/' + path, {
+        params: { fields: 'id,text,username,timestamp,permalink,replied_to', limit: 25,
+          ...(i === position.postIndex && position.replyAfter ? { after: position.replyAfter } : {}) }
+      });
+      for (const reply of (replyRes.data?.data || []) as Array<Record<string, unknown>>) {
+        if (reply.id === post.id || (!params.includeOwn && reply.username === own?.username)) continue;
+        const timestamp = typeof reply.timestamp === 'string' ? Date.parse(reply.timestamp) / 1000 : NaN;
+        if (params.since !== undefined && !(timestamp >= params.since)) continue;
+        if (params.until !== undefined && !(timestamp <= params.until)) continue;
+        data.push({ ...reply, post: { id: post.id, permalink: post.permalink } });
+      }
+      if (replyRes.data?.paging?.next) {
+        const after = replyRes.data?.paging?.cursors?.after;
+        if (!after) throw new Error('Missing reply paging cursor');
+        next = encode({ postsAfter: position.postsAfter, postIndex: i, replyAfter: after });
+        break;
+      }
+      if (data.length >= limit && i + 1 < posts.length) {
+        next = encode({ postsAfter: position.postsAfter, postIndex: i + 1 });
+        break;
+      }
+      if (data.length >= limit) break;
+    }
+    if (!next && postRes.data?.paging?.next) {
+      const after = postRes.data?.paging?.cursors?.after;
+      if (!after) throw new Error('Missing post paging cursor');
+      next = encode({ postsAfter: after, postIndex: 0 });
+    }
+    return { data, meta: { next, truncated: next !== null, scanned_posts: scanned,
+      returned: data.length, depth: params.depth ?? 'top',
+      note: 'Bounded multi-call scan; no guarantee of a snapshot across Meta pages' } };
+  }
+
+  async getPublishingLimit(): Promise<unknown> {
+    const response = await this.client.get('/' + this.config.userId + '/threads_publishing_limit', {
+      params: { fields: 'quota_usage,config,reply_quota_usage,reply_config' }
     });
     return response.data;
   }
