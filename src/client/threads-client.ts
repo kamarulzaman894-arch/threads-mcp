@@ -342,6 +342,9 @@ export class ThreadsClient {
       params: {fields:'id,permalink',limit:10,...(position.postsAfter?{after:position.postsAfter}:{})}
     });
     const posts = (page.data?.data || []) as Array<{id:string;permalink?:string}>;
+    if(position.postsAfter && posts.length===0) {
+      return {data:[],meta:{next:null,truncated:false,scanned_posts:0,returned:0}};
+    }
     if (position.postIndex >= posts.length && posts.length > 0)
       throw Error('Post paging cursor changed; restart scan');
     const data:Array<Record<string,unknown>>=[];
