@@ -1,3 +1,5 @@
+import { KZActionApprovals } from './authority/action-approvals.js';
+import { executionOnlyWriteValidator } from './authority/write-execution-scope.js';
 import * as http from 'http';
 import { URL } from 'url';
 import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
@@ -19,6 +21,15 @@ const redirectUri =
 const redisUrl = process.env.REDIS_URL;
 const mcpBearerToken = process.env.MCP_REMOTE_BEARER_TOKEN;
 const TOKEN_KEY = 'kz:threads:oauth-token';
+const enableOwnerGatedWrites = process.env.KZ_ENABLE_OWNER_GATED_WRITES === 'true';
+const ownerHash = process.env.KZ_MCP_OWNER_KEY_SHA256 || '';
+const actionApprovals = enableOwnerGatedWrites && redisUrl && publicBaseUrl && /^[a-f0-9]{64}$/i.test(ownerHash)
+  ? new KZActionApprovals({
+      get: async key => redisCommand(['GET', key]),
+      set: async (key, value, ttl) => (await redisCommand(['SET', key, value, 'EX', String(ttl)])) === 'OK',
+      getDel: async key => redisCommand(['GETDEL', key]),
+    }, ownerHash, publicBaseUrl, () => authState.userId || null)
+  : undefined;
 
 const scopes = [
   'threads_basic',
@@ -144,11 +155,12 @@ async function handleMcpRequest(
     });
   }
 
-  const mcpServer = new ThreadsMCPServer(true);
+  const mcpServer = new ThreadsMCPServer(true, actionApprovals);
   mcpServer.setClient(
     new ThreadsClient({
       accessToken: activeAccessToken,
       userId: authState.userId,
+      writeApprovalValidator: actionApprovals ? executionOnlyWriteValidator : undefined,
     })
   );
 
@@ -703,6 +715,8 @@ const server = http.createServer(async (req, res) => {
         transport: 'streamable-http',
         authentication: 'oauth2-or-internal-bearer',
         configured: Boolean(oauthServer && redisUrl),
+        exposedToolCount: actionApprovals ? 26 : 16,
+        writeExecution: actionApprovals ? 'OWNER_APPROVAL_EACH_ACTION' : 'DISABLED',
       },
     });
   }
@@ -714,6 +728,7 @@ const server = http.createServer(async (req, res) => {
       redirectUri: redirectUri || null,
       authenticated: authState.authenticated,
       remoteMcpConfigured: Boolean(oauthServer && redisUrl),
+      exposedToolCount: actionApprovals ? 26 : 16,
       remoteMcpSessions: mcpSessions.size,
     });
   }
@@ -750,6 +765,45 @@ const server = http.createServer(async (req, res) => {
     catch (error) { console.error('OAuth token failed:', checkDetail(error));
       if (!res.headersSent) sendJson(res, 500, { error: 'server_error' }); }
     return;
+  }
+
+
+  if (url.pathname === '/actions/review' && req.method === 'GET') {
+    if (!actionApprovals) return sendHtml(res, 503, '<h1>Owner-gated writes are not configured.</h1>');
+    const ref = url.searchParams.get('ref') || '';
+    const item = await actionApprovals.getPending(ref);
+    if (!item || item.status !== 'pending') {
+      return sendHtml(res, 404, '<h1>Approval expired, already used, or not found.</h1>');
+    }
+    const escape = (v: string) => v.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    const page = '<!doctype html><html><head><meta charset="utf-8"><title>KZ Threads Manual Approval</title></head>' +
+      '<body style="font-family:system-ui;max-width:750px;margin:36px auto;padding:18px">' +
+      '<h1>KZ Threads — Confirm action</h1>' +
+      '<p>Action: <strong>' + escape(item.action) + '</strong></p>' +
+      '<p>Account ID: ' + escape(item.userId) + '</p>' +
+      '<p>Expires in 10 minutes from request. No action will run until the ChatGPT call is repeated after approval.</p>' +
+      '<pre style="white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid #ccc;padding:16px">' +
+      escape(item.summary) + '</pre>' +
+      '<form action="/actions/approve" method="post">' +
+      '<input type="hidden" name="ref" value="' + escape(ref) + '">' +
+      '<label>Owner secret <input type="password" name="owner_key" autocomplete="off" required></label>' +
+      '<p><button type="submit">KZ approves this exact action once</button></p></form></body></html>';
+    return sendHtml(res, 200, page);
+  }
+  if (url.pathname === '/actions/approve' && req.method === 'POST') {
+    if (!actionApprovals) return sendHtml(res, 503, '<h1>Owner-gated writes are not configured.</h1>');
+    let body = '';
+    for await (const part of req) {
+      body += part.toString();
+      if (body.length > 8192) return sendHtml(res, 413, '<h1>Request too large.</h1>');
+    }
+    const form = new URLSearchParams(body);
+    const ref = form.get('ref') || '';
+    const approved = await actionApprovals.ownerApprove(ref, form.get('owner_key') || '');
+    return sendHtml(res, approved ? 200 : 403, approved
+      ? '<h1>Approved for one use</h1><p>Return to ChatGPT and repeat the exact tool call with approvalRef. This approval alone has not published anything.</p>'
+      : '<h1>Approval denied or expired</h1>');
   }
 
   if (url.pathname === '/mcp') {
