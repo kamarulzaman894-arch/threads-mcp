@@ -11,6 +11,7 @@ import * as net from 'net';
 import * as tls from 'tls';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { ThreadsMCPServer } from './server.js';
+import { threadsOauthScopes } from './authority/threads-oauth-scopes.js';
 
 const port = Number(process.env.PORT || 10000);
 const appId = process.env.THREADS_APP_ID;
@@ -32,18 +33,7 @@ const actionApprovals = enableOwnerGatedWrites && redisUrl && publicBaseUrl && /
     }, ownerHash, publicBaseUrl, () => authState.userId || null)
   : undefined;
 
-const scopes = [
-  'threads_basic',
-  'threads_content_publish',
-  'threads_manage_insights',
-  'threads_manage_replies',
-  'threads_read_replies',
-  'threads_keyword_search',
-  'threads_manage_mentions',
-  'threads_delete',
-  'threads_location_tagging',
-  'threads_profile_discovery',
-];
+const scopes = threadsOauthScopes(enableOwnerGatedWrites);
 
 type SmokeCheck = {
   ok: boolean;
