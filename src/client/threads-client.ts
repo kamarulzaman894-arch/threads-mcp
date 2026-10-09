@@ -232,6 +232,7 @@ export class ThreadsClient {
     const response = await this.client.get('/' + params.threadId + '/pending_replies', {
       params: {
         fields: (params.fields || ['id','text','username','timestamp','permalink']).join(','),
+        approval_status: 'pending',
         ...(params.limit !== undefined ? { limit: params.limit } : {}),
         ...(params.after ? { after: params.after } : {})
       }
