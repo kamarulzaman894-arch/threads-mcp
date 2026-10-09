@@ -278,7 +278,8 @@ export class ThreadsClient {
       scanned++;
       const path = params.depth === 'all' ? 'conversation' : 'replies';
       const replyRes = await this.client.get('/' + post.id + '/' + path, {
-        params: { fields: 'id,text,username,timestamp,permalink,replied_to', limit: 25,
+        params: { fields: 'id,text,username,timestamp,permalink,replied_to',
+          limit: Math.min(25, Math.max(1, limit - data.length)),
           ...(i === position.postIndex && position.replyAfter ? { after: position.replyAfter } : {}) }
       });
       for (const reply of (replyRes.data?.data || []) as Array<Record<string, unknown>>) {
