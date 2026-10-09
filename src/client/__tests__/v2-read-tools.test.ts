@@ -55,7 +55,8 @@ describe('V2 read-only tools', () => {
     expect(result.data[0].id).toBe('r2');
     expect(get).toHaveBeenCalledWith('/p1/replies', expect.objectContaining({params:expect.objectContaining({limit:1})}));
     expect(result.meta.next).toBeTruthy();
-    const next:any = await c.getProfileComments({limit:1,after:result.meta.next});
+    await expect(c.getProfileComments({limit:1,after:result.meta.next})).rejects.toThrow('Invalid comments cursor');
+    const next:any = await c.getProfileComments({limit:1,since:1791500000,after:result.meta.next});
     expect(next.data[0].id).toBe('r3');
     expect(post).not.toHaveBeenCalled();
   });
@@ -91,6 +92,17 @@ describe('V2 read-only tools', () => {
     expect(second.data.map((item:any)=>item.id)).toEqual(['external']);
     expect(second.meta.next).toBeNull();
     expect(post).not.toHaveBeenCalled();
+  });
+  it('rejects oversized provider reply pages rather than silently skipping comments', async () => {
+    get.mockImplementation(async (path:string) => {
+      if (path === '/owner123/threads') return {data:{data:[{id:'p1'}]}};
+      if (path === '/p1/replies') return {data:{data:[
+        {id:'a',username:'one'}, {id:'b',username:'two'}
+      ]}};
+      throw Error(path);
+    });
+    await expect(clientFactory().getProfileComments({limit:1,includeOwn:true}))
+      .rejects.toThrow(/exceeded requested limit/);
   });
   it('preserves original filters when caller resumes with the same options', async () => {
     get.mockImplementation(async (path:string, options:any) => {
