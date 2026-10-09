@@ -310,11 +310,11 @@ export class McpOAuthServer {
         '<h1>Connect KZ THRIVE Connect</h1>' +
         '<p><strong>' +
         clientName +
-        '</strong> is requesting read-only access to the Threads account already connected to this private service.</p>' +
+        '</strong> is requesting access to Threads data. Every write, publish, reply, repost, delete or moderation action also requires separate manual approval using your private owner key.</p>' +
         '<p>Scope: <code>' +
         escapeHtml(this.scope) +
         '</code></p>' +
-        '<p>No publishing, reply, repost, delete or moderation permission is granted by this authorization.</p>' +
+        '<p>This connection alone does not grant permission to execute publishing, reply, repost, delete or moderation. Each such action needs a separate owner approval.</p>' +
         '<form method="post" action="/oauth/approve">' +
         '<input type="hidden" name="txn" value="' +
         escapeHtml(txnId) +
