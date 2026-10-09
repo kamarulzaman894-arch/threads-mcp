@@ -278,12 +278,15 @@ export class ThreadsClient {
       scanned++;
       const path = params.depth === 'all' ? 'conversation' : 'replies';
       const replyRes = await this.client.get('/' + post.id + '/' + path, {
-        params: { fields: 'id,text,username,timestamp,permalink,replied_to',
+        params: { fields: 'id,text,username,timestamp,permalink,replied_to,is_reply_owned_by_me',
           limit: Math.min(25, Math.max(1, limit - data.length)),
           ...(i === position.postIndex && position.replyAfter ? { after: position.replyAfter } : {}) }
       });
       for (const reply of (replyRes.data?.data || []) as Array<Record<string, unknown>>) {
-        if (reply.id === post.id || (!params.includeOwn && reply.username === own?.username)) continue;
+        if (reply.id === post.id || (!params.includeOwn && (
+          reply.is_reply_owned_by_me === true ||
+          (typeof reply.username === 'string' && reply.username.toLowerCase() === own?.username.toLowerCase())
+        ))) continue;
         const timestamp = typeof reply.timestamp === 'string' ? Date.parse(reply.timestamp) / 1000 : NaN;
         if (params.since !== undefined && !(timestamp >= params.since)) continue;
         if (params.until !== undefined && !(timestamp <= params.until)) continue;
