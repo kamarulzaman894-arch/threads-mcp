@@ -585,30 +585,30 @@ export class ThreadsMCPServer {
         switch (name) {
           case 'threads_get_profile': {
             const params = GetProfileSchema.parse(args);
-            return textResult(await this.client.getProfile(params.fields));
+            return textResult(await this.client!.getProfile(params.fields));
           }
           case 'threads_get_threads': {
             const params = GetThreadsSchema.parse(args);
-            return textResult(await this.client.getThreads(params));
+            return textResult(await this.client!.getThreads(params));
           }
           case 'threads_list_my_replies': {
             const params = ListMyRepliesSchema.parse(args);
-            return textResult(await this.client.listMyReplies(params));
+            return textResult(await this.client!.listMyReplies(params));
           }
           case 'threads_get_public_profile_posts': {
             const params = PublicProfilePostsSchema.parse(args);
-            return textResult(await this.client.getPublicProfilePosts(params.username, params));
+            return textResult(await this.client!.getPublicProfilePosts(params.username, params));
           }
           case 'threads_get_publishing_limit': {
-            return textResult(await this.client.getPublishingLimit());
+            return textResult(await this.client!.getPublishingLimit());
           }
           case 'threads_get_container_status': {
             const params = ContainerStatusSchema.parse(args);
-            return textResult(await this.client.getContainerStatus(params.containerId));
+            return textResult(await this.client!.getContainerStatus(params.containerId));
           }
           case 'threads_get_account_insights': {
             const params = AccountInsightsSchema.parse(args);
-            return textResult(await this.client.getUserInsights({
+            return textResult(await this.client!.getUserInsights({
               metric: params.metrics,
               since: params.since,
               until: params.until,
@@ -616,12 +616,12 @@ export class ThreadsMCPServer {
           }
           case 'threads_get_thread': {
             const params = GetThreadSchema.parse(args);
-            return textResult(await this.client.getThread(params.threadId, params.fields));
+            return textResult(await this.client!.getThread(params.threadId, params.fields));
           }
           case 'threads_search': {
             const params = SearchThreadsSchema.parse(args);
             return textResult(
-              await this.client.searchThreads(params.query, {
+              await this.client!.searchThreads(params.query, {
                 searchType: params.searchType,
                 fields: params.fields,
                 limit: params.limit,
@@ -632,18 +632,18 @@ export class ThreadsMCPServer {
           }
           case 'threads_get_mentions': {
             const params = GetMentionsSchema.parse(args);
-            return textResult(await this.client.getMentions(params));
+            return textResult(await this.client!.getMentions(params));
           }
           case 'threads_profile_lookup': {
             const params = ProfileLookupSchema.parse(args);
             return textResult(
-              await this.client.profileLookup(params.username, { fields: params.fields })
+              await this.client!.profileLookup(params.username, { fields: params.fields })
             );
           }
           case 'threads_search_locations': {
             const params = SearchLocationsSchema.parse(args);
             return textResult(
-              await this.client.searchLocations(params.query, {
+              await this.client!.searchLocations(params.query, {
                 fields: params.fields,
                 latitude: params.latitude,
                 longitude: params.longitude,
@@ -652,17 +652,17 @@ export class ThreadsMCPServer {
           }
           case 'threads_get_location': {
             const params = GetLocationSchema.parse(args);
-            return textResult(await this.client.getLocation(params.locationId, params.fields));
+            return textResult(await this.client!.getLocation(params.locationId, params.fields));
           }
           case 'threads_get_insights': {
             const params = GetInsightsSchema.parse(args);
             const insights = params.threadId
-              ? await this.client.getThreadInsights(params.threadId, {
+              ? await this.client!.getThreadInsights(params.threadId, {
                   metric: params.metrics,
                   since: params.since,
                   until: params.until,
                 })
-              : await this.client.getUserInsights({
+              : await this.client!.getUserInsights({
                   metric: params.metrics,
                   since: params.since,
                   until: params.until,
@@ -672,7 +672,7 @@ export class ThreadsMCPServer {
           case 'threads_get_replies': {
             const params = GetRepliesSchema.parse(args);
             return textResult(
-              await this.client.getReplies(params.threadId, {
+              await this.client!.getReplies(params.threadId, {
                 fields: params.fields,
                 reverse: params.reverse,
               })
@@ -681,7 +681,7 @@ export class ThreadsMCPServer {
           case 'threads_get_conversation': {
             const params = GetConversationSchema.parse(args);
             return textResult(
-              await this.client.getConversation(params.threadId, {
+              await this.client!.getConversation(params.threadId, {
                 fields: params.fields,
                 reverse: params.reverse,
               })
@@ -689,29 +689,29 @@ export class ThreadsMCPServer {
           }
           case 'threads_create_video_container': {
             const params = VideoContainerSchema.parse(args);
-            return textResult(await this.client.createVideoContainer(params, params.approval));
+            return textResult(await this.client!.createVideoContainer(params, params.approval));
           }
           case 'threads_create_carousel_post': {
             const params = CarouselContainerSchema.parse(args);
-            return textResult(await this.client.createCarouselContainer(params, params.approval));
+            return textResult(await this.client!.createCarouselContainer(params, params.approval));
           }
           case 'threads_publish_container': {
             const params = PublishContainerSchema.parse(args);
-            return textResult(await this.client.publishContainer(params.containerId, params.approval));
+            return textResult(await this.client!.publishContainer(params.containerId, params.approval));
           }
           case 'threads_quote_thread': {
             const params = QuoteThreadSchema.parse(args);
-            return textResult(await this.client.quoteThread(params, params.approval));
+            return textResult(await this.client!.quoteThread(params, params.approval));
           }
           case 'threads_create_thread': {
             const params = CreateThreadSchema.parse(args);
             const { approval, ...threadParams } = params;
-            return textResult(await this.client.createThread(threadParams, approval));
+            return textResult(await this.client!.createThread(threadParams, approval));
           }
           case 'threads_reply_to_thread': {
             const params = ReplyToThreadSchema.parse(args);
             return textResult(
-              await this.client.replyToThread(
+              await this.client!.replyToThread(
                 params.threadId,
                 params.text,
                 params.approval,
@@ -721,22 +721,22 @@ export class ThreadsMCPServer {
           }
           case 'threads_repost_thread': {
             const params = RepostThreadSchema.parse(args);
-            return textResult(await this.client.repostThread(params.threadId, params.approval));
+            return textResult(await this.client!.repostThread(params.threadId, params.approval));
           }
           case 'threads_delete_thread': {
             const params = DeleteThreadSchema.parse(args);
-            return textResult(await this.client.deleteThread(params.threadId, params.approval));
+            return textResult(await this.client!.deleteThread(params.threadId, params.approval));
           }
           case 'threads_manage_reply': {
             const params = ManageReplySchema.parse(args);
             return textResult(
-              await this.client.manageReply(params.replyId, params.hide, params.approval)
+              await this.client!.manageReply(params.replyId, params.hide, params.approval)
             );
           }
           case 'threads_manage_pending_reply': {
             const params = ManagePendingReplySchema.parse(args);
             return textResult(
-              await this.client.managePendingReply(
+              await this.client!.managePendingReply(
                 params.replyId,
                 params.approve,
                 params.approval
