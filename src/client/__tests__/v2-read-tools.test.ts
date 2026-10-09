@@ -53,6 +53,7 @@ describe('V2 read-only tools', () => {
     const result:any = await c.getProfileComments({limit:1, since:1791500000});
     expect(result.data).toHaveLength(1);
     expect(result.data[0].id).toBe('r2');
+    expect(get).toHaveBeenCalledWith('/p1/replies', expect.objectContaining({params:expect.objectContaining({limit:1})}));
     expect(result.meta.next).toBeTruthy();
     const next:any = await c.getProfileComments({limit:1,after:result.meta.next});
     expect(next.data[0].id).toBe('r3');
