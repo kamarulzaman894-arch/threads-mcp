@@ -40,4 +40,36 @@ describe('V2 bounded own comments reader',()=>{
     expect(get).toHaveBeenCalledWith('/p1/pending_replies',expect.objectContaining({params:expect.objectContaining({approval_status:'pending',limit:2})}));
     expect(post).not.toHaveBeenCalled();
   });
+  it('continues replies when Meta provides cursors but omits paging.next',async()=>{
+    get.mockImplementation(async(path:string,config:any)=>{
+      if(path==='/owner/threads')return{data:{data:[{id:'p1'}]}};
+      if(path==='/p1/replies'&&!config.params.after)return{data:{
+        data:[{id:'first',username:'customer',timestamp:'2026-10-09T00:00:00Z'}],
+        paging:{cursors:{after:'reply-A'}}
+      }};
+      if(path==='/p1/replies'&&config.params.after==='reply-A')return{data:{data:[]}};
+      throw Error(path);
+    });
+    const c=make(),a:any=await c.getProfileComments({limit:10,includeOwn:true});
+    expect(a.data.map((r:any)=>r.id)).toEqual(['first']);
+    expect(a.meta.next).toBeTruthy();
+    const b:any=await c.getProfileComments({limit:10,includeOwn:true,after:a.meta.next});
+    expect(b.data).toHaveLength(0);
+    expect(b.meta.next).toBeNull();
+    expect(post).not.toHaveBeenCalled();
+  });
+  it('continues post pages when Meta provides cursor but no paging.next',async()=>{
+    get.mockImplementation(async(path:string,config:any)=>{
+      if(path==='/owner/threads'&&!config.params.after)return{data:{data:[{id:'p1'}],paging:{cursors:{after:'posts-A'}}}};
+      if(path==='/owner/threads'&&config.params.after==='posts-A')return{data:{data:[{id:'p2'}]}};
+      if(path==='/p1/replies')return{data:{data:[]}};
+      if(path==='/p2/replies')return{data:{data:[{id:'found',username:'customer'}]}};
+      throw Error(path);
+    });
+    const c=make(),a:any=await c.getProfileComments({limit:5,includeOwn:true});
+    expect(a.meta.next).toBeTruthy();
+    const b:any=await c.getProfileComments({limit:5,includeOwn:true,after:a.meta.next});
+    expect(b.data.map((r:any)=>r.id)).toEqual(['found']);
+  });
+
 });
