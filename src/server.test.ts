@@ -106,13 +106,13 @@ describe('ThreadsMCPServer Integration', () => {
       expect(listToolsCalls.length).toBeGreaterThanOrEqual(0);
     });
 
-    it('should expose exactly 26 human-controlled tools', async () => {
+    it('should expose exactly 28 human-controlled tools', async () => {
       const serverInstance = (server as any).server;
       const handler = serverInstance.setRequestHandler.mock.calls[0]?.[1];
       expect(handler).toBeDefined();
 
       const result = await handler({});
-      expect(result.tools).toHaveLength(26);
+      expect(result.tools).toHaveLength(28);
 
       const names = result.tools.map((tool: any) => tool.name);
       expect(names).toContain('threads_search');
@@ -139,12 +139,12 @@ describe('ThreadsMCPServer Integration', () => {
     }
   });
 
-  it('read-only mode lists 16 tools and excludes all writes', async () => {
+  it('read-only mode lists 18 tools and excludes all writes', async () => {
     const readOnly = new ThreadsMCPServer(true);
     const instance = (readOnly as any).server;
     const listHandler = instance.setRequestHandler.mock.calls[0][1];
     const result = await listHandler({});
-    expect(result.tools).toHaveLength(16);
+    expect(result.tools).toHaveLength(18);
     const names = result.tools.map((tool: any) => tool.name);
     expect(names).toContain('threads_list_my_replies');
     expect(names).toContain('threads_get_public_profile_posts');
@@ -186,7 +186,7 @@ describe('ThreadsMCPServer Integration', () => {
     });
   });
 
-  it('exposes 26 tools but executes write only after KZ owner approval, once', async () => {
+  it('exposes 28 tools but executes write only after KZ owner approval, once', async () => {
     const m = new Map<string, string>();
     const ownerSecret = 'sample-owner-key-not-a-real-credential-123';
     const gate = new KZActionApprovals({
@@ -200,7 +200,7 @@ describe('ThreadsMCPServer Integration', () => {
     remote.setClient({ ...mockClient, createThread } as ThreadsClient);
     const srv=(remote as any).server;
     const toolsList=await srv.setRequestHandler.mock.calls[0][1]({});
-    expect(toolsList.tools).toHaveLength(26);
+    expect(toolsList.tools).toHaveLength(28);
     const call=srv.setRequestHandler.mock.calls[1][1];
     const payload={text:'Approved only by owner'};
     const prepared=await call({params:{name:'threads_create_thread',arguments:payload}});
