@@ -1,3 +1,7 @@
+import { WRITE_TOOL_NAMES } from './authority/capabilities.js';
+import { digestWritePayload } from './authority/write-approval.js';
+import { writeExecutionContext } from './authority/write-execution-scope.js';
+import type { KZActionApprovals } from './authority/action-approvals.js';
 import { READ_TOOL_NAMES, TOOL_CAPABILITIES } from './authority/capabilities.js';
 import { sanitizeMetaResponse } from './utils/sanitize-meta-response.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -195,7 +199,7 @@ export class ThreadsMCPServer {
   private server: Server;
   private client: ThreadsClient | null = null;
 
-  constructor(private readonly readOnly = false) {
+  constructor(private readonly readOnly = false, private readonly approvals?: KZActionApprovals) {
     this.server = new Server(
       {
         name: 'kz-threads-mcp-human-controlled',
@@ -563,7 +567,7 @@ export class ThreadsMCPServer {
           tools.some((tool) => !expectedNames.has(tool.name))) {
         throw new Error('MCP tool registry is inconsistent with the 26-tool capability contract.');
       }
-      return { tools: this.readOnly ? tools.filter((tool) => READ_TOOL_NAMES.has(tool.name)) : tools };
+      return { tools: this.readOnly && !this.approvals ? tools.filter((tool) => READ_TOOL_NAMES.has(tool.name)) : tools };
     });
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -572,11 +576,12 @@ export class ThreadsMCPServer {
       }
 
       const { name, arguments: args } = request.params;
-      if (this.readOnly && !READ_TOOL_NAMES.has(name)) {
+      if (this.readOnly && !this.approvals && !READ_TOOL_NAMES.has(name)) {
         throw new Error('READ_ONLY: write and unknown tools are disabled for remote MCP.');
       }
 
       try {
+        const runTool = async () => {
         switch (name) {
           case 'threads_get_profile': {
             const params = GetProfileSchema.parse(args);
@@ -741,6 +746,28 @@ export class ThreadsMCPServer {
           default:
             throw new Error(`Unknown tool: ${name}`);
         }
+        };
+        if (WRITE_TOOL_NAMES.has(name)) {
+          if (!this.approvals) throw new Error('WRITE_LOCKED: no owner approval service configured.');
+          const parsed = args && typeof args === 'object' && !Array.isArray(args)
+            ? args as Record<string, unknown> : {};
+          const approval = parsed.approval as
+            | { approved?: boolean; approvedBy?: string; approvalRef?: string }
+            | undefined;
+          if (!approval) return textResult(await this.approvals.prepare(name, parsed));
+          if (!approval.approved || approval.approvedBy !== 'KZ' || !approval.approvalRef) {
+            throw new Error('KZ_APPROVAL_REQUIRED');
+          }
+          const payloadDigest = digestWritePayload(name, parsed);
+          const allowed = await this.approvals.validator().validate({
+            action: name,
+            approval: approval as { approved: true; approvedBy: 'KZ'; approvalRef: string },
+            payloadDigest,
+          });
+          if (!allowed) throw new Error('KZ_APPROVAL_INVALID_OR_ALREADY_USED');
+          return await writeExecutionContext.run({ action: name, approvalRef: approval.approvalRef }, runTool);
+        }
+        return await runTool();
       } catch (error) {
         if (error instanceof z.ZodError) {
           throw new Error(`Invalid parameters: ${JSON.stringify(error.errors)}`);
