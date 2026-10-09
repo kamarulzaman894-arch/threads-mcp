@@ -72,4 +72,19 @@ describe('V2 bounded own comments reader',()=>{
     expect(b.data.map((r:any)=>r.id)).toEqual(['found']);
   });
 
+  it('stops after an empty post continuation page',async()=>{
+    get.mockImplementation(async(path:string,opts:any)=>{
+      if(path==='/owner/threads'&&!opts.params.after)return {data:{data:[{id:'p1'}],paging:{cursors:{after:'next-post'}}}};
+      if(path==='/owner/threads'&&opts.params.after==='next-post')return {data:{data:[]}};
+      if(path==='/p1/replies')return {data:{data:[]}};
+      throw Error(path);
+    });
+    const c=make(),a:any=await c.getProfileComments({limit:5,includeOwn:true});
+    expect(a.meta.next).toBeTruthy();
+    const b:any=await c.getProfileComments({limit:5,includeOwn:true,after:a.meta.next});
+    expect(b.meta.next).toBeNull();
+    expect(b.data).toHaveLength(0);
+    expect(post).not.toHaveBeenCalled();
+  });
+
 });
