@@ -128,6 +128,17 @@ describe('ThreadsMCPServer Integration', () => {
     });
   });
 
+  it('all 10 write tools allow first-call approval preparation without a ref', async () => {
+    const mcp = (server as any).server;
+    const registry = await mcp.setRequestHandler.mock.calls[0][1]({});
+    const writes = registry.tools.filter((tool: any) => tool.description.startsWith('WRITE:'));
+    expect(writes).toHaveLength(10);
+    for (const tool of writes) {
+      expect(tool.inputSchema.properties.approval).toBeDefined();
+      expect(tool.inputSchema.required ?? []).not.toContain('approval');
+    }
+  });
+
   it('read-only mode lists 16 tools and excludes all writes', async () => {
     const readOnly = new ThreadsMCPServer(true);
     const instance = (readOnly as any).server;

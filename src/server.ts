@@ -186,7 +186,7 @@ const GetConversationSchema = z.object({
 const approvalInput = {
   type: 'object' as const,
   description:
-    'Required for write actions. The host runtime must validate approvalRef against a real KZ approval; tool arguments alone cannot authorize a write.',
+    'Optional on the first call to request manual KZ approval. Required on the second call to execute; owner approval must be verified server-side and is one-time use.',
   properties: {
     approved: { type: 'boolean' as const, const: true },
     approvedBy: { type: 'string' as const, const: 'KZ' },
@@ -419,7 +419,7 @@ export class ThreadsMCPServer {
               altText: { type: 'string' },
               approval: approvalInput,
             },
-            required: ['videoUrl', 'approval'],
+            required: ['videoUrl'],
           },
         },
         {
@@ -438,7 +438,7 @@ export class ThreadsMCPServer {
               text: { type: 'string' },
               approval: approvalInput,
             },
-            required: ['items', 'approval'],
+            required: ['items'],
           },
         },
         {
@@ -447,7 +447,7 @@ export class ThreadsMCPServer {
           inputSchema: {
             type: 'object',
             properties: { containerId: { type: 'string' }, approval: approvalInput },
-            required: ['containerId', 'approval'],
+            required: ['containerId'],
           },
         },
         {
@@ -456,7 +456,7 @@ export class ThreadsMCPServer {
           inputSchema: {
             type: 'object',
             properties: { threadId: { type: 'string' }, text: { type: 'string' }, approval: approvalInput },
-            required: ['threadId', 'text', 'approval'],
+            required: ['threadId', 'text'],
           },
         },
         {
@@ -481,7 +481,7 @@ export class ThreadsMCPServer {
               },
               approval: approvalInput,
             },
-            required: ['approval'],
+            required: [],
           },
         },
         {
@@ -504,7 +504,7 @@ export class ThreadsMCPServer {
               },
               approval: approvalInput,
             },
-            required: ['threadId', 'text', 'approval'],
+            required: ['threadId', 'text'],
           },
         },
         {
@@ -516,7 +516,7 @@ export class ThreadsMCPServer {
               threadId: { type: 'string' },
               approval: approvalInput,
             },
-            required: ['threadId', 'approval'],
+            required: ['threadId'],
           },
         },
         {
@@ -528,7 +528,7 @@ export class ThreadsMCPServer {
               threadId: { type: 'string' },
               approval: approvalInput,
             },
-            required: ['threadId', 'approval'],
+            required: ['threadId'],
           },
         },
         {
@@ -542,7 +542,7 @@ export class ThreadsMCPServer {
               hide: { type: 'boolean' },
               approval: approvalInput,
             },
-            required: ['replyId', 'hide', 'approval'],
+            required: ['replyId', 'hide'],
           },
         },
         {
@@ -556,7 +556,7 @@ export class ThreadsMCPServer {
               approve: { type: 'boolean' },
               approval: approvalInput,
             },
-            required: ['replyId', 'approve', 'approval'],
+            required: ['replyId', 'approve'],
           },
         },
       ];
