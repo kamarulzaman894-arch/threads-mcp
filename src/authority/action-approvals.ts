@@ -55,13 +55,15 @@ export class KZActionApprovals {
     const payload = args && typeof args === 'object' && !Array.isArray(args)
       ? Object.fromEntries(Object.entries(args).filter(([k]) => k !== 'approval'))
       : args;
+    const summary = JSON.stringify(payload);
+    if (summary.length > 32000) throw new Error('KZ_APPROVAL_PAYLOAD_TOO_LARGE');
     const ref = randomBytes(24).toString('hex');
     const issued = this.now();
     const record: RecordData = {
       action,
       payloadDigest: digestWritePayload(action, payload),
       userId,
-      summary: JSON.stringify(payload).slice(0, 4000),
+      summary,
       issued,
       expires: issued + TTL_SECONDS * 1000,
       status: 'pending',
