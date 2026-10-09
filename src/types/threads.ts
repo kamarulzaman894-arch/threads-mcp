@@ -125,11 +125,6 @@ export interface CreateThreadParams {
   imageUrl?: string;
   videoUrl?: string;
   replyToId?: string;
-  topicTag?: string;
-  linkAttachment?: string;
-  pollOptions?: string[];
-  altText?: string;
-  enableReplyApprovals?: boolean;
   replyControl?:
     | 'everyone'
     | 'accounts_you_follow'
