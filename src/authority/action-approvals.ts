@@ -17,7 +17,7 @@ interface RecordData {
   status: RecordState;
 }
 const PREFIX = 'kz:threads:write-approval:v1:';
-const TTL_SECONDS = 600;
+const TTL_SECONDS = 30 * 60;
 const REF_PATTERN = /^[a-f0-9]{48}$/;
 
 function safeMatchHex(digest: string, expected: string): boolean {
