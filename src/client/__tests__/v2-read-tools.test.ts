@@ -43,7 +43,6 @@ describe('V2 read-only tools', () => {
       if (path === '/owner123') return { data: { id:'owner123',username:'kz' } };
       if (path === '/owner123/threads') return { data: { data:[{id:'p1',permalink:'url1'},{id:'p2',permalink:'url2'}] } };
       if (path === '/p1/replies') return { data: { data:[
-        {id:'r1',username:'kz',timestamp:'2026-10-08T00:00:00Z'},
         {id:'r2',username:'lead',timestamp:'2026-10-09T00:00:00Z'}
       ] } };
       if (path === '/p2/replies') return { data: { data: [{id:'r3',username:'lead',timestamp:'2026-10-09T00:00:00Z'}] } };
