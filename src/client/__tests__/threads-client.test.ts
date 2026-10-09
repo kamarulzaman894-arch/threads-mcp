@@ -107,6 +107,24 @@ describe('ThreadsClient', () => {
     });
   });
 
+  describe('profileLookup', () => {
+    it('uses safe default public profile fields validated against Meta', async () => {
+      mockAxiosInstance.get.mockResolvedValue({ data: { username: 'threads', name: 'Threads' } });
+      const result = await client.profileLookup('threads');
+      expect(mockAxiosInstance.get).toHaveBeenCalledWith('/profile_lookup', {
+        params: { username: 'threads', fields: 'username,name' },
+      });
+      expect(result).toEqual({ username: 'threads', name: 'Threads' });
+    });
+    it('preserves explicit field requests for callers', async () => {
+      mockAxiosInstance.get.mockResolvedValue({ data: { username: 'threads' } });
+      await client.profileLookup('threads', { fields: ['username'] });
+      expect(mockAxiosInstance.get).toHaveBeenCalledWith('/profile_lookup', {
+        params: { username: 'threads', fields: 'username' },
+      });
+    });
+  });
+
   describe('getThreads', () => {
     it('should fetch user threads with default parameters', async () => {
       const mockThreads = {
