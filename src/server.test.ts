@@ -104,13 +104,13 @@ describe('ThreadsMCPServer Integration', () => {
       expect(listToolsCalls.length).toBeGreaterThanOrEqual(0);
     });
 
-    it('should expose exactly 17 human-controlled tools', async () => {
+    it('should expose exactly 20 human-controlled tools', async () => {
       const serverInstance = (server as any).server;
       const handler = serverInstance.setRequestHandler.mock.calls[0]?.[1];
       expect(handler).toBeDefined();
 
       const result = await handler({});
-      expect(result.tools).toHaveLength(17);
+      expect(result.tools).toHaveLength(20);
 
       const names = result.tools.map((tool: any) => tool.name);
       expect(names).toContain('threads_search');
