@@ -218,6 +218,80 @@ describe('ThreadsMCPServer Integration', () => {
     expect(createThread).toHaveBeenCalledTimes(1);
   });
 
+
+  it('enforces explicit KZ owner approval and single use on every write tool', async () => {
+    const cases: Array<{ name: string; method: string; payload: Record<string, unknown> }> = [
+      { name: 'threads_create_video_container', method: 'createVideoContainer', payload: { videoUrl: 'https://example.com/test.mp4', text: 'test' } },
+      { name: 'threads_create_carousel_post', method: 'createCarouselContainer', payload: { items: [
+        { type: 'IMAGE', url: 'https://example.com/1.jpg' },
+        { type: 'IMAGE', url: 'https://example.com/2.jpg' },
+      ], text: 'test' } },
+      { name: 'threads_publish_container', method: 'publishContainer', payload: { containerId: 'mock-container-1' } },
+      { name: 'threads_quote_thread', method: 'quoteThread', payload: { threadId: 'mock-thread-1', text: 'test' } },
+      { name: 'threads_create_thread', method: 'createThread', payload: { text: 'test' } },
+      { name: 'threads_reply_to_thread', method: 'replyToThread', payload: { threadId: 'mock-thread-1', text: 'test' } },
+      { name: 'threads_repost_thread', method: 'repostThread', payload: { threadId: 'mock-thread-1' } },
+      { name: 'threads_delete_thread', method: 'deleteThread', payload: { threadId: 'mock-thread-1' } },
+      { name: 'threads_manage_reply', method: 'manageReply', payload: { replyId: 'mock-reply-1', hide: true } },
+      { name: 'threads_manage_pending_reply', method: 'managePendingReply', payload: { replyId: 'mock-reply-1', approve: true } },
+    ];
+    const ownerSecret = 'all-tools-regression-owner-key';
+    const kv = new Map<string, string>();
+    const gate = new KZActionApprovals({
+      get: async k => kv.get(k) ?? null,
+      set: async (k, v, _ttl) => { kv.set(k, v); return true; },
+      getDel: async k => { const value = kv.get(k) ?? null; kv.delete(k); return value; },
+    }, createHash('sha256').update(ownerSecret).digest('hex'), 'https://example.invalid', () => 'mock-owner');
+    const remote = new ThreadsMCPServer(true, gate);
+    const fakeClient: Record<string, any> = { ...mockClient };
+    for (const c of cases) fakeClient[c.method] = vi.fn().mockResolvedValue({ id: 'mock-success' });
+    remote.setClient(fakeClient as ThreadsClient);
+    const handlers = (remote as any).server.setRequestHandler.mock.calls;
+    const call = handlers[1][1];
+    const inventory = await handlers[0][1]({});
+    for (const c of cases) {
+      expect(inventory.tools.find((tool: any) => tool.name === c.name)?.inputSchema.required ?? []).not.toContain('approval');
+      const prepare = await call({ params: { name: c.name, arguments: c.payload } });
+      const challenge = JSON.parse(prepare.content[0].text);
+      expect(challenge.status).toBe('KZ_APPROVAL_REQUIRED');
+      expect(challenge.expiresInSeconds).toBe(1800);
+      expect(fakeClient[c.method]).not.toHaveBeenCalled();
+      const attempt = {
+        ...c.payload,
+        approval: { approved: true, approvedBy: 'KZ', approvalRef: challenge.approvalRef },
+      };
+      await expect(call({ params: { name: c.name, arguments: attempt } })).rejects.toThrow('KZ_APPROVAL_INVALID');
+      expect(fakeClient[c.method]).not.toHaveBeenCalled();
+      expect(await gate.ownerApprove(challenge.approvalRef, ownerSecret)).toBe(true);
+      const executed = await call({ params: { name: c.name, arguments: attempt } });
+      expect(JSON.parse(executed.content[0].text)).toEqual({ id: 'mock-success' });
+      expect(fakeClient[c.method]).toHaveBeenCalledTimes(1);
+      await expect(call({ params: { name: c.name, arguments: attempt } })).rejects.toThrow('KZ_APPROVAL_INVALID');
+      expect(fakeClient[c.method]).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('never allows a KZ approvalRef to authorize a different write tool', async () => {
+    const ownerSecret = 'cross-tool-regression-owner-key';
+    const kv = new Map<string, string>();
+    const gate = new KZActionApprovals({
+      get: async k => kv.get(k) ?? null,
+      set: async (k, v, _ttl) => { kv.set(k, v); return true; },
+      getDel: async k => { const value = kv.get(k) ?? null; kv.delete(k); return value; },
+    }, createHash('sha256').update(ownerSecret).digest('hex'), 'https://example.invalid', () => 'mock-owner');
+    const remote = new ThreadsMCPServer(true, gate);
+    const deleteThread = vi.fn().mockResolvedValue({ id: 'should-never-run' });
+    remote.setClient({ ...mockClient, deleteThread } as ThreadsClient);
+    const call = (remote as any).server.setRequestHandler.mock.calls[1][1];
+    const challenge = JSON.parse((await call({ params: { name: 'threads_create_thread', arguments: { text: 'allowed' } } })).content[0].text);
+    expect(await gate.ownerApprove(challenge.approvalRef, ownerSecret)).toBe(true);
+    await expect(call({ params: { name: 'threads_delete_thread', arguments: {
+      threadId: 'mock-id',
+      approval: { approved: true, approvedBy: 'KZ', approvalRef: challenge.approvalRef },
+    } } })).rejects.toThrow('KZ_APPROVAL_INVALID');
+    expect(deleteThread).not.toHaveBeenCalled();
+  });
+
   describe('Server lifecycle', () => {
     it('should connect to transport', async () => {
       const serverInstance = (server as any).server;
