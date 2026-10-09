@@ -33,6 +33,18 @@ describe('KZ manual approval gate', () => {
     await gate.ownerApprove(t.approvalRef,key);
     expect(await gate.validator().validate({action:'threads_create_thread',approval:{approved:true,approvedBy:'KZ',approvalRef:t.approvalRef},payloadDigest:digestWritePayload('threads_create_thread',{text:'Altered'})})).toBe(false);
   });
+  it('remains approvable after 10 minutes and usable at minute 29',async()=>{
+    const {gate,advance}=setup();
+    const args={text:'Manual approval TTL coverage'};
+    const t=await gate.prepare('threads_create_thread',args);
+    expect(t.expiresInSeconds).toBe(1800);
+    advance(11 * 60 * 1000);
+    expect(await gate.ownerApprove(t.approvalRef,key)).toBe(true);
+    advance(18 * 60 * 1000);
+    const req={action:'threads_create_thread',approval:{approved:true as const,approvedBy:'KZ' as const,approvalRef:t.approvalRef},payloadDigest:digestWritePayload('threads_create_thread',args)};
+    expect(await gate.validator().validate(req)).toBe(true);
+    expect(await gate.validator().validate(req)).toBe(false);
+  });
   it('rejects expired approval',async()=>{
     const {gate,advance}=setup();
     const t=await gate.prepare('threads_delete_thread',{threadId:'123'});
