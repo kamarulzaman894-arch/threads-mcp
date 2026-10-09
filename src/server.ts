@@ -132,6 +132,17 @@ const GetConversationSchema = z.object({
   reverse: z.boolean().optional(),
 });
 
+const ProfileCommentsSchema = z.object({
+  limit: z.number().int().min(1).max(100).optional(),
+  since: z.number().optional(), until: z.number().optional(),
+  includeOwn: z.boolean().optional(), depth: z.enum(['top','all']).optional(),
+  after: z.string().optional(),
+});
+const PendingRepliesSchema = z.object({
+  threadId: z.string().min(1), limit: z.number().int().min(1).max(100).optional(),
+  fields: z.array(z.string()).optional(), after: z.string().optional(),
+});
+
 const approvalInput = {
   type: 'object' as const,
   description:
@@ -304,6 +315,29 @@ export class ThreadsMCPServer {
             },
             required: ['threadId'],
           },
+        },
+        {
+          name: 'threads_get_profile_comments',
+          description: 'READ: Bounded own-account inbox sweep across posts, resumable using meta.next.',
+          inputSchema: { type: 'object', properties: {
+            limit: { type: 'number', minimum: 1, maximum: 100 },
+            since: { type: 'number' }, until: { type: 'number' },
+            includeOwn: { type: 'boolean' }, depth: { type: 'string', enum: ['top','all'] },
+            after: { type: 'string' }
+          } }
+        },
+        {
+          name: 'threads_get_pending_replies',
+          description: 'READ: Get pending replies for one owned post.',
+          inputSchema: { type: 'object', properties: {
+            threadId: { type: 'string' }, limit: { type: 'number', minimum: 1, maximum: 100 },
+            fields: { type: 'array', items: { type: 'string' } }, after: { type: 'string' }
+          }, required: ['threadId'] }
+        },
+        {
+          name: 'threads_get_publishing_limit',
+          description: 'READ: Live publishing quotas, no write.',
+          inputSchema: { type: 'object', properties: {} }
         },
         {
           name: 'threads_create_thread',
@@ -499,6 +533,17 @@ export class ThreadsMCPServer {
                 reverse: params.reverse,
               })
             );
+          }
+          case 'threads_get_profile_comments': {
+            const params = ProfileCommentsSchema.parse(args);
+            return textResult(await this.client.getProfileComments(params));
+          }
+          case 'threads_get_pending_replies': {
+            const params = PendingRepliesSchema.parse(args);
+            return textResult(await this.client.getPendingReplies(params));
+          }
+          case 'threads_get_publishing_limit': {
+            return textResult(await this.client.getPublishingLimit());
           }
           case 'threads_create_thread': {
             const params = CreateThreadSchema.parse(args);
