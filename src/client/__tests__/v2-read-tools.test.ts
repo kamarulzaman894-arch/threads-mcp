@@ -69,4 +69,40 @@ describe('V2 read-only tools', () => {
     expect(result.data).toHaveLength(1);
     expect(get).toHaveBeenCalledWith('/p1/conversation',expect.any(Object));
   });
+
+  it('preserves reply cursor while skipping owned replies on a paged post', async () => {
+    get.mockImplementation(async (path:string, options:any) => {
+      if (path === '/owner123') return {data:{id:'owner123',username:'kz'}};
+      if (path === '/owner123/threads') return {data:{data:[{id:'p1'}]}};
+      if (path === '/p1/replies' && !options.params.after) return {data:{
+        data:[{id:'own',username:'KZ',is_reply_owned_by_me:true,timestamp:'2026-10-09T00:00:00Z'}],
+        paging:{next:'next-page',cursors:{after:'reply-cursor'}}
+      }};
+      if (path === '/p1/replies' && options.params.after === 'reply-cursor') return {data:{
+        data:[{id:'external',username:'prospect',timestamp:'2026-10-09T01:00:00Z'}]
+      }};
+      throw Error('unexpected API request: '+path);
+    });
+    const c=clientFactory();
+    const first:any=await c.getProfileComments({limit:1});
+    expect(first.data).toHaveLength(0);
+    expect(first.meta.next).toBeTruthy();
+    const second:any=await c.getProfileComments({limit:1,after:first.meta.next});
+    expect(second.data.map((item:any)=>item.id)).toEqual(['external']);
+    expect(second.meta.next).toBeNull();
+    expect(post).not.toHaveBeenCalled();
+  });
+  it('preserves original filters when caller resumes with the same options', async () => {
+    get.mockImplementation(async (path:string, options:any) => {
+      if(path === '/owner123/threads') return {data:{data:[{id:'p1'},{id:'p2'}]}};
+      if(path === '/p1/conversation') return {data:{data:[{id:'c1',username:'visitor',timestamp:'2026-10-09T00:00:00Z'}]}};
+      if(path === '/p2/conversation') return {data:{data:[{id:'c2',username:'visitor',timestamp:'2026-10-09T01:00:00Z'}]}};
+      throw Error(path);
+    });
+    const c=clientFactory();
+    const first:any=await c.getProfileComments({limit:1,depth:'all',includeOwn:true});
+    expect(first.data.map((item:any)=>item.id)).toEqual(['c1']);
+    const second:any=await c.getProfileComments({limit:1,depth:'all',includeOwn:true,after:first.meta.next});
+    expect(second.data.map((item:any)=>item.id)).toEqual(['c2']);
+  });
 });
