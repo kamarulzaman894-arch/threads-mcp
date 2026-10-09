@@ -11,6 +11,7 @@ import * as net from 'net';
 import * as tls from 'tls';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { ThreadsMCPServer } from './server.js';
+import { threadsOauthScopes } from './authority/threads-oauth-scopes.js';
 
 const port = Number(process.env.PORT || 10000);
 const appId = process.env.THREADS_APP_ID;
@@ -32,18 +33,7 @@ const actionApprovals = enableOwnerGatedWrites && redisUrl && publicBaseUrl && /
     }, ownerHash, publicBaseUrl, () => authState.userId || null)
   : undefined;
 
-const scopes = [
-  'threads_basic',
-  'threads_content_publish',
-  'threads_manage_insights',
-  'threads_manage_replies',
-  'threads_read_replies',
-  'threads_keyword_search',
-  'threads_manage_mentions',
-  'threads_delete',
-  'threads_location_tagging',
-  'threads_profile_discovery',
-];
+const scopes = threadsOauthScopes(enableOwnerGatedWrites);
 
 type SmokeCheck = {
   ok: boolean;
@@ -565,7 +555,7 @@ async function runRemoteMcpSelfTest(): Promise<void> {
   };
   const toolNames = toolsPayload.result?.tools?.map((tool) => tool.name) ?? [];
 
-  if (toolNames.length !== (actionApprovals ? 26 : 16) ||
+  if (toolNames.length !== (actionApprovals ? 28 : 18) ||
       (actionApprovals
         ? !['threads_create_thread', 'threads_reply_to_thread', 'threads_delete_thread'].every(name => toolNames.includes(name))
         : ['threads_create_thread', 'threads_reply_to_thread', 'threads_repost_thread', 'threads_delete_thread'].some(name => toolNames.includes(name)))) {
@@ -615,7 +605,7 @@ async function runRemoteMcpSelfTest(): Promise<void> {
   });
 
   console.error(
-    'Remote MCP self-test: PASS (401 guard, initialize, ' + (actionApprovals ? '26 owner-gated tools' : '16 read-only tools') + ', profile read)'
+    'Remote MCP self-test: PASS (401 guard, initialize, ' + (actionApprovals ? '28 owner-gated tools' : '18 read-only tools') + ', profile read)'
   );
 }
 
@@ -719,7 +709,7 @@ const server = http.createServer(async (req, res) => {
         transport: 'streamable-http',
         authentication: 'oauth2-or-internal-bearer',
         configured: Boolean(oauthServer && redisUrl),
-        exposedToolCount: actionApprovals ? 26 : 16,
+        exposedToolCount: actionApprovals ? 28 : 18,
         writeExecution: actionApprovals ? 'OWNER_APPROVAL_EACH_ACTION' : 'DISABLED',
       },
     });
@@ -732,7 +722,7 @@ const server = http.createServer(async (req, res) => {
       redirectUri: redirectUri || null,
       authenticated: authState.authenticated,
       remoteMcpConfigured: Boolean(oauthServer && redisUrl),
-      exposedToolCount: actionApprovals ? 26 : 16,
+      exposedToolCount: actionApprovals ? 28 : 18,
       remoteMcpSessions: mcpSessions.size,
     });
   }

@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { TOOL_CAPABILITIES, READ_TOOL_NAMES, WRITE_TOOL_NAMES, classifyMetaApiFailure } from './capabilities.js';
 
 describe('canonical Threads tool contract', () => {
-  it('has 26 unique tools: 16 reads and 10 writes', () => {
-    expect(TOOL_CAPABILITIES).toHaveLength(26);
-    expect(new Set(TOOL_CAPABILITIES.map((t) => t.name)).size).toBe(26);
-    expect(READ_TOOL_NAMES.size).toBe(16);
+  it('has 28 unique tools: 18 reads and 10 writes', () => {
+    expect(TOOL_CAPABILITIES).toHaveLength(28);
+    expect(new Set(TOOL_CAPABILITIES.map((t) => t.name)).size).toBe(28);
+    expect(READ_TOOL_NAMES.size).toBe(18);
     expect(WRITE_TOOL_NAMES.size).toBe(10);
     for (const read of READ_TOOL_NAMES) expect(WRITE_TOOL_NAMES.has(read)).toBe(false);
   });

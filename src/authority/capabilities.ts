@@ -1,5 +1,5 @@
 /**
- * Canonical 26-tool inventory for KZ Threads MCP.
+ * Canonical 28-tool inventory (26 legacy + 2 additive READ) for KZ Threads MCP.
  *
  * Exposing a tool is not proof of Meta permission, approval or runtime readiness.
  * Mutations remain blocked remotely until human approval is verified server-side.
@@ -21,6 +21,8 @@ export const TOOL_CAPABILITIES = [
   { name: 'threads_get_insights', mode: 'read', scope: 'threads_manage_insights' },
   { name: 'threads_get_replies', mode: 'read', scope: 'threads_read_replies' },
   { name: 'threads_get_conversation', mode: 'read', scope: 'threads_read_replies' },
+  { name: 'threads_get_profile_comments', mode: 'read', scope: 'threads_read_replies' },
+  { name: 'threads_get_pending_replies', mode: 'read', scope: 'threads_manage_replies' },
   { name: 'threads_create_video_container', mode: 'write', scope: 'threads_content_publish' },
   { name: 'threads_create_carousel_post', mode: 'write', scope: 'threads_content_publish' },
   { name: 'threads_publish_container', mode: 'write', scope: 'threads_content_publish' },
