@@ -176,3 +176,20 @@ export interface SearchLocationsParams {
 export interface ProfileLookupParams {
   fields?: string[];
 }
+
+/** A cursor is valid only with the same since/until/depth/includeOwn settings. */
+export interface ProfileCommentsParams {
+  limit?: number;
+  since?: number;
+  until?: number;
+  includeOwn?: boolean;
+  depth?: 'top' | 'all';
+  after?: string;
+}
+
+export interface PendingRepliesParams {
+  threadId: string;
+  fields?: string[];
+  limit?: number;
+  after?: string;
+}
