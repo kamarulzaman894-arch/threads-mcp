@@ -142,7 +142,7 @@ describe('ThreadsClient', () => {
       await expect(client.profileLookup('someoneelse')).rejects.toThrow();
       expect(mockAxiosInstance.get).toHaveBeenCalledTimes(2);
     });
-    it('routes matching owner's public posts read to authenticated endpoint', async () => {
+    it("routes matching owner public posts read to authenticated endpoint", async () => {
       mockAxiosInstance.get.mockRejectedValueOnce(permissionError())
         .mockResolvedValueOnce({ data: { id: 'test-user-id', username: 'kzbinzainal' } })
         .mockResolvedValueOnce({ data: { data: [{ id: 'post1' }], paging: { cursors: { after: 'next' } } } });
