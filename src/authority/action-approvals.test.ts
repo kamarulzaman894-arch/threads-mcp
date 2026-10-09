@@ -19,6 +19,7 @@ describe('KZ manual approval gate', () => {
     const {gate}=setup();
     const args={text:'This is a draft'};
     const task=await gate.prepare('threads_create_thread',args);
+    expect(task.expiresInSeconds).toBe(1800);
     const req={action:'threads_create_thread',approval:{approved:true as const, approvedBy:'KZ' as const, approvalRef:task.approvalRef},payloadDigest:digestWritePayload('threads_create_thread',args)};
     expect(await gate.validator().validate(req)).toBe(false);
     expect(await gate.ownerApprove(task.approvalRef,'wrong-key')).toBe(false);
@@ -35,7 +36,7 @@ describe('KZ manual approval gate', () => {
   it('rejects expired approval',async()=>{
     const {gate,advance}=setup();
     const t=await gate.prepare('threads_delete_thread',{threadId:'123'});
-    advance(601000);
+    advance(1801000);
     expect(await gate.ownerApprove(t.approvalRef,key)).toBe(false);
   });
 });
